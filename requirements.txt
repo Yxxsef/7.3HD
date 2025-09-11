@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+pytest
+pytest-cov
+prometheus-client
+httpx
