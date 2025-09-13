@@ -15,7 +15,9 @@ pipeline {
         withSonarQubeEnv('7.3HD') {
           sh """
             ${SCANNER_HOME}/bin/sonar-scanner \
-              -Dsonar.projectBaseDir=. \
+              -Dsonar.organization=yxxsef \
+              -Dsonar.projectKey=yxxsef_7-3hd \
+              -Dsonar.projectName=7.3HD \
               -Dsonar.sources=. \
               -Dsonar.exclusions=node_modules/**,dist/**,**/*.test.js,**/*.spec.js
           """
