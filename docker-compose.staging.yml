@@ -1,0 +1,9 @@
+﻿version: "3.8"
+services:
+  api:
+    build: .
+    image: yourdocker/7.3hd-api:staging
+    ports: ["9000:8000"]
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
