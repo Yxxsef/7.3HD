@@ -1,5 +1,6 @@
 pipeline {
-  agent any
+  agent { label 'docker' }
+  tools { nodejs 'NodeLTS' }
   options {
     timestamps()
     buildDiscarder(logRotator(numToKeepStr: '10'))
@@ -22,6 +23,12 @@ pipeline {
               -Dsonar.exclusions=node_modules/**,dist/**,**/*.test.js,**/*.spec.js
           """
         }
+      }
+    }
+    stage('Env check'){
+      steps {
+        // Do not fail build if Docker isn't present yet
+        sh 'node -v || true; docker --version || true'
       }
     }
     stage('Package'){ steps { sh 'mkdir -p dist && echo build > dist/artifact.txt' } }
