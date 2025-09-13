@@ -6,18 +6,29 @@ pipeline {
   stages {
     stage('Checkout'){ steps { checkout scm } }
 
-    // No shell; works on Windows & Linux
+    // No shell here (cross-platform)
     stage('Build'){ steps { script { writeFile file:'dist/artifact.txt', text:'build\n' } } }
 
-    // Linux container -> OK to use sh here
+    // Test inside Linux container; OK to use `sh`
     stage('Test') {
-      agent { docker { image 'python:3.11-slim'; args '-u root' } }
+      agent {
+        docker {
+          image 'python:3.11-slim'
+          // persist pip cache on the Windows agent
+          args "-u root -v ${WORKSPACE}\\.pip-cache:/root/.cache/pip"
+        }
+      }
+      environment {
+        PIP_CACHE_DIR = '/root/.cache/pip'
+      }
+      options { timeout(time: 20, unit: 'MINUTES') }
       steps {
         sh '''
           python -V
           python -m pip install -U pip
-          pip install -r requirements-dev.txt || pip install -r requirements.txt || true
-          pip install pytest pytest-cov coverage
+          pip install --prefer-binary -r requirements-dev.txt || \
+          pip install --prefer-binary -r requirements.txt || true
+          pip install --prefer-binary pytest pytest-cov coverage
           mkdir -p reports
           pytest -q --junitxml=reports/junit.xml --cov=app \
                  --cov-report=xml:reports/coverage.xml --cov-report=term
