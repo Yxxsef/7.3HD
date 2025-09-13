@@ -14,26 +14,38 @@ pipeline {
       steps { script { writeFile file: 'dist/artifact.txt', text: 'build\n' } }
     }
 
+    // Pre-pull image and pre-download wheels into a persistent cache on the agent
     stage('Warm cache') {
       steps {
+        // Convert WORKSPACE to forward-slash format for Docker on Windows
         bat '''
+          set "WS=%WORKSPACE:\\=/%"
           docker pull python:3.11-slim
-          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" python:3.11-slim sh -lc "python -m pip install -U pip || true"
-          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements-dev.txt || true"
-          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements.txt || true"
-          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" python:3.11-slim sh -lc "pip download -d /root/.cache/pip pytest pytest-cov coverage || true"
+
+          rem mount cache + workspace so requirements*.txt are visible
+          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" -v "%WS%:/src" -w /src ^
+            python:3.11-slim sh -lc "python -m pip install -U pip || true"
+
+          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" -v "%WS%:/src" -w /src ^
+            python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements-dev.txt || true"
+
+          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" -v "%WS%:/src" -w /src ^
+            python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements.txt || true"
+
+          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" -v "%WS%:/src" -w /src ^
+            python:3.11-slim sh -lc "pip download -d /root/.cache/pip pytest pytest-cov coverage || true"
         '''
       }
     }
 
-    // 🔧 Force this stage onto the docker-labeled Windows agent, and reuse the same workspace
     stage('Test') {
       agent {
         docker {
           image 'python:3.11-slim'
-          label 'docker'       // <-- important
-          reuseNode true       // <-- run container on this same agent/workspace
-          args '-u root -v %WORKSPACE%\\.pip-cache:/root/.cache/pip'
+          label 'docker'
+          reuseNode true
+          // expand via Jenkins env + use forward slashes
+          args "-u root -v ${env.WORKSPACE.replace('\\','/')}/.pip-cache:/root/.cache/pip"
         }
       }
       environment { PIP_CACHE_DIR = '/root/.cache/pip' }
