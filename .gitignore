@@ -11,3 +11,10 @@ reports/
 __pycache__/
 *.pyc
 .pip-cache/
+# CI/local artifacts
+agent.jar
+pytest-junit.xml
+reports/
+__pycache__/
+*.pyc
+.pip-cache/
