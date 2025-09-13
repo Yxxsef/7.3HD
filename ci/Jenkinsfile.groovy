@@ -1,26 +1,43 @@
 pipeline {
   agent { label 'docker' }
   tools { nodejs 'NodeLTS' }
-  options { timestamps(); buildDiscarder(logRotator(numToKeepStr:'20')); skipDefaultCheckout(true) }
+  options {
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    skipDefaultCheckout(true)
+  }
 
   stages {
-    stage('Checkout'){ steps { checkout scm } }
+    stage('Checkout') { steps { checkout scm } }
 
-    // No shell here (cross-platform)
-    stage('Build'){ steps { script { writeFile file:'dist/artifact.txt', text:'build\n' } } }
+    // Build without using a shell so it works on Windows agents
+    stage('Build') {
+      steps { script { writeFile file: 'dist/artifact.txt', text: 'build\n' } }
+    }
 
-    // Test inside Linux container; OK to use `sh`
+    // Pre-pull image and pre-download wheels into a persistent cache on the agent
+    stage('Warm cache') {
+      steps {
+        bat '''
+          docker pull python:3.11-slim
+          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" python:3.11-slim sh -lc "python -m pip install -U pip || true"
+          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements-dev.txt || true"
+          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements.txt || true"
+          docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" python:3.11-slim sh -lc "pip download -d /root/.cache/pip pytest pytest-cov coverage || true"
+        '''
+      }
+    }
+
+    // Test inside Linux container; OK to use `sh` here
     stage('Test') {
       agent {
         docker {
           image 'python:3.11-slim'
-          // persist pip cache on the Windows agent
-          args "-u root -v ${WORKSPACE}\\.pip-cache:/root/.cache/pip"
+          // persist pip cache on the Windows agent between builds
+          args '-u root -v %WORKSPACE%\\.pip-cache:/root/.cache/pip'
         }
       }
-      environment {
-        PIP_CACHE_DIR = '/root/.cache/pip'
-      }
+      environment { PIP_CACHE_DIR = '/root/.cache/pip' }
       options { timeout(time: 20, unit: 'MINUTES') }
       steps {
         sh '''
@@ -29,6 +46,7 @@ pipeline {
           pip install --prefer-binary -r requirements-dev.txt || \
           pip install --prefer-binary -r requirements.txt || true
           pip install --prefer-binary pytest pytest-cov coverage
+
           mkdir -p reports
           pytest -q --junitxml=reports/junit.xml --cov=app \
                  --cov-report=xml:reports/coverage.xml --cov-report=term
@@ -39,10 +57,13 @@ pipeline {
         always {
           junit 'reports/junit.xml'
           script {
-            try { publishCoverage adapters: [coberturaAdapter('reports/coverage.xml')] }
-            catch (e) { publishHTML([reportDir:'reports/html', reportFiles:'index.html', reportName:'Coverage HTML']) }
+            try {
+              publishCoverage adapters: [coberturaAdapter('reports/coverage.xml')]
+            } catch (e) {
+              publishHTML([reportDir: 'reports/html', reportFiles: 'index.html', reportName: 'Coverage HTML'])
+            }
           }
-          archiveArtifacts artifacts:'reports/**', fingerprint:true
+          archiveArtifacts artifacts: 'reports/**', fingerprint: true
         }
       }
     }
@@ -62,18 +83,22 @@ pipeline {
       }
     }
 
-    stage('Env check'){
+    stage('Env check') {
       steps {
         script {
           if (isUnix()) sh 'node -v || true; docker --version || true'
-          else          bat 'node -v || ver>NUL & docker --version || ver>NUL'
+          else          bat 'node -v || ver >NUL & docker --version || ver >NUL'
         }
       }
     }
 
-    // No shell; cross-platform
-    stage('Package'){ steps { script { writeFile file:'dist/ok.txt', text:'ok\n' } } }
+    // Cross-platform packaging step
+    stage('Package') {
+      steps { script { writeFile file: 'dist/ok.txt', text: 'ok\n' } }
+    }
   }
 
-  post { always { archiveArtifacts artifacts:'dist/**', allowEmptyArchive:true } }
+  post {
+    always { archiveArtifacts artifacts: 'dist/**', allowEmptyArchive: true }
+  }
 }
