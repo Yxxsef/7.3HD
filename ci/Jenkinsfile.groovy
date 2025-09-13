@@ -10,12 +10,10 @@ pipeline {
   stages {
     stage('Checkout') { steps { checkout scm } }
 
-    // Build without using a shell so it works on Windows agents
     stage('Build') {
       steps { script { writeFile file: 'dist/artifact.txt', text: 'build\n' } }
     }
 
-    // Pre-pull image and pre-download wheels into a persistent cache on the agent
     stage('Warm cache') {
       steps {
         bat '''
@@ -28,12 +26,13 @@ pipeline {
       }
     }
 
-    // Test inside Linux container; OK to use `sh` here
+    // 🔧 Force this stage onto the docker-labeled Windows agent, and reuse the same workspace
     stage('Test') {
       agent {
         docker {
           image 'python:3.11-slim'
-          // persist pip cache on the Windows agent between builds
+          label 'docker'       // <-- important
+          reuseNode true       // <-- run container on this same agent/workspace
           args '-u root -v %WORKSPACE%\\.pip-cache:/root/.cache/pip'
         }
       }
@@ -57,11 +56,8 @@ pipeline {
         always {
           junit 'reports/junit.xml'
           script {
-            try {
-              publishCoverage adapters: [coberturaAdapter('reports/coverage.xml')]
-            } catch (e) {
-              publishHTML([reportDir: 'reports/html', reportFiles: 'index.html', reportName: 'Coverage HTML'])
-            }
+            try { publishCoverage adapters: [coberturaAdapter('reports/coverage.xml')] }
+            catch (e) { publishHTML([reportDir: 'reports/html', reportFiles: 'index.html', reportName: 'Coverage HTML']) }
           }
           archiveArtifacts artifacts: 'reports/**', fingerprint: true
         }
@@ -92,7 +88,6 @@ pipeline {
       }
     }
 
-    // Cross-platform packaging step
     stage('Package') {
       steps { script { writeFile file: 'dist/ok.txt', text: 'ok\n' } }
     }
