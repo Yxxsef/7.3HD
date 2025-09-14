@@ -1,5 +1,5 @@
 pipeline {
-  agent { label 'docker' }               // your Windows node that has Docker Desktop
+  agent { label 'docker' }          // your Windows node that has Docker Desktop
   tools { nodejs 'NodeLTS' }
   options {
     timestamps()
@@ -58,54 +58,43 @@ pipeline {
       }
     }
 
-    // Run tests inside the container (manual docker run so -w /src is valid on Linux)
+    // Run tests inside the container
     stage('Test') {
       options { timeout(time: 20, unit: 'MINUTES') }
       steps {
         script {
           if (isUnix()) {
             sh '''
+              WS="$WORKSPACE"
               docker run --rm -u root \
                 -v "$WORKSPACE/.pip-cache:/root/.cache/pip" \
-                -v "$WORKSPACE:/src" -w /src \
-                python:3.11-slim sh -lc '
-                  set -e
-                  python -V
-                  python -m pip install -U pip
-                  (pip install --prefer-binary -r requirements-dev.txt || true)
-                  (pip install --prefer-binary -r requirements.txt || true)
-                  pip install --prefer-binary -U pytest pytest-cov coverage
-                  mkdir -p reports
-                  pytest -q --junitxml=reports/junit.xml --cov=app \
-                         --cov-report=xml:reports/coverage.xml --cov-report=term
-                  coverage html -d reports/html || true
-                '
+                -v "$WS:/src" -w /src \
+                python:3.11-slim sh -lc 'set -e; \
+                  python -V; \
+                  python -m pip install -U pip; \
+                  if [ -f requirements-dev.txt ]; then pip install --prefer-binary -r requirements-dev.txt; fi; \
+                  if [ -f requirements.txt ]; then pip install --prefer-binary -r requirements.txt; fi; \
+                  pip install --prefer-binary -U pytest pytest-cov coverage; \
+                  mkdir -p reports; \
+                  pytest -q --junitxml=reports/junit.xml --cov=. \
+                         --cov-report=xml:reports/coverage.xml --cov-report=term; \
+                  coverage html -d reports/html || true'
             '''
           } else {
             bat '''
               setlocal EnableExtensions EnableDelayedExpansion
               set "WS=%WORKSPACE:\\=/%"
-
               docker run --rm -u root ^
                 -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" ^
                 -v "%WS%:/src" -w /src ^
-                python:3.11-slim sh -lc "set -e; ^
-                  python -V && ^
-                  python -m pip install -U pip && ^
-                  (pip install --prefer-binary -r requirements-dev.txt || true) && ^
-                  (pip install --prefer-binary -r requirements.txt || true) && ^
-                  pip install --prefer-binary -U pytest pytest-cov coverage && ^
-                  mkdir -p reports && ^
-                  pytest -q --junitxml=reports/junit.xml --cov=app ^
-                         --cov-report=xml:reports/coverage.xml --cov-report=term && ^
-                  coverage html -d reports/html || true"
+                python:3.11-slim sh -lc "python -V && python -m pip install -U pip && if [ -f requirements-dev.txt ]; then pip install --prefer-binary -r requirements-dev.txt; fi && if [ -f requirements.txt ]; then pip install --prefer-binary -r requirements.txt; fi && pip install --prefer-binary -U pytest pytest-cov coverage && mkdir -p reports && pytest -q --junitxml=reports/junit.xml --cov=. --cov-report=xml:reports/coverage.xml --cov-report=term && coverage html -d reports/html || true"
             '''
           }
         }
       }
       post {
         always {
-          junit 'reports/junit.xml'
+          junit allowEmptyResults: true, testResults: 'reports/junit.xml'
           script {
             try { publishCoverage adapters: [coberturaAdapter('reports/coverage.xml')] }
             catch (e) { publishHTML([reportDir: 'reports/html', reportFiles: 'index.html', reportName: 'Coverage HTML']) }
@@ -148,3 +137,4 @@ pipeline {
     always { archiveArtifacts artifacts: 'dist/**', allowEmptyArchive: true }
   }
 }
+
