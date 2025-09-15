@@ -1,20 +1,13 @@
 pipeline {
-  agent { label 'docker' }          // your Windows node that has Docker Desktop
+  agent { label 'docker' }          // Windows node with Docker Desktop
   tools { nodejs 'NodeLTS' }
-  options {
-    timestamps()
-    buildDiscarder(logRotator(numToKeepStr: '20'))
-    skipDefaultCheckout(true)
-  }
+  options { timestamps(); buildDiscarder(logRotator(numToKeepStr: '20')); skipDefaultCheckout(true) }
 
   stages {
     stage('Checkout') { steps { checkout scm } }
 
-    stage('Build') {
-      steps { script { writeFile file: 'dist/artifact.txt', text: 'build\n' } }
-    }
+    stage('Build') { steps { script { writeFile file: 'dist/artifact.txt', text: 'build\n' } } }
 
-    // Pre-pull image and pre-download wheels into a persistent cache
     stage('Warm cache') {
       steps {
         script {
@@ -22,16 +15,12 @@ pipeline {
             sh '''
               WS="$WORKSPACE"
               docker pull python:3.11-slim
-
               docker run --rm -v "$WORKSPACE/.pip-cache:/root/.cache/pip" -v "$WS:/src" -w /src \
                 python:3.11-slim sh -lc "python -m pip install -U pip || true"
-
               docker run --rm -v "$WORKSPACE/.pip-cache:/root/.cache/pip" -v "$WS:/src" -w /src \
                 python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements-dev.txt || true"
-
               docker run --rm -v "$WORKSPACE/.pip-cache:/root/.cache/pip" -v "$WS:/src" -w /src \
                 python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements.txt || true"
-
               docker run --rm -v "$WORKSPACE/.pip-cache:/root/.cache/pip" -v "$WS:/src" -w /src \
                 python:3.11-slim sh -lc "pip download -d /root/.cache/pip pytest pytest-cov coverage || true"
             '''
@@ -39,17 +28,12 @@ pipeline {
             bat '''
               set "WS=%WORKSPACE:\\=/%"
               docker pull python:3.11-slim
-
-              rem mount cache + workspace so requirements*.txt are visible
               docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" -v "%WS%:/src" -w /src ^
                 python:3.11-slim sh -lc "python -m pip install -U pip || true"
-
               docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" -v "%WS%:/src" -w /src ^
                 python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements-dev.txt || true"
-
               docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" -v "%WS%:/src" -w /src ^
                 python:3.11-slim sh -lc "pip download -d /root/.cache/pip -r requirements.txt || true"
-
               docker run --rm -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" -v "%WS%:/src" -w /src ^
                 python:3.11-slim sh -lc "pip download -d /root/.cache/pip pytest pytest-cov coverage || true"
             '''
@@ -58,7 +42,6 @@ pipeline {
       }
     }
 
-    // Run tests inside the container
     stage('Test') {
       options { timeout(time: 20, unit: 'MINUTES') }
       steps {
@@ -101,23 +84,15 @@ pipeline {
       }
       post {
         always {
-          // JUnit test results
           junit allowEmptyResults: true, testResults: 'reports/junit.xml'
-
-          // Coverage via Code Coverage API plugin
-          recordCoverage tools: [cobertura('reports/coverage.xml')]
-
-          // Publish HTML coverage (HTML Publisher plugin requires these flags)
-          publishHTML([
+          publishHTML(targets: [[
             reportDir: 'reports/html',
             reportFiles: 'index.html',
             reportName: 'Coverage HTML',
             allowMissing: true,
             keepAll: false,
             alwaysLinkToLastBuild: true
-          ])
-
-          // Keep raw artifacts too
+          ]])
           archiveArtifacts artifacts: 'reports/**', fingerprint: true
         }
       }
@@ -152,8 +127,5 @@ pipeline {
     }
   }
 
-  post {
-    always { archiveArtifacts artifacts: 'dist/**', allowEmptyArchive: true }
-  }
+  post { always { archiveArtifacts artifacts: 'dist/**', allowEmptyArchive: true } }
 }
-
