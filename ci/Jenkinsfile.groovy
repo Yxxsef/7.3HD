@@ -70,7 +70,6 @@ pipeline {
                 -v "$WORKSPACE/.pip-cache:/root/.cache/pip" \
                 -v "$WS:/src" -w /src \
                 python:3.11-slim sh -lc 'set -e; \
-                  export PYTHONPATH=/src:$PYTHONPATH; \
                   python -V; \
                   python -m pip install -U pip; \
                   if [ -f requirements-dev.txt ]; then pip install --prefer-binary -r requirements-dev.txt; fi; \
@@ -79,7 +78,7 @@ pipeline {
                   mkdir -p reports; \
                   pytest -q --junitxml=reports/junit.xml --cov=. \
                          --cov-report=xml:reports/coverage.xml --cov-report=term; \
-                  coverage html -d reports/html || true'
+                  rc=$?; coverage html -d reports/html || true; exit $rc'
             '''
           } else {
             bat '''
@@ -88,25 +87,37 @@ pipeline {
               docker run --rm -u root ^
                 -v "%WORKSPACE%\\.pip-cache:/root/.cache/pip" ^
                 -v "%WS%:/src" -w /src ^
-                python:3.11-slim sh -lc "export PYTHONPATH=/src:\\$PYTHONPATH && \
-                  python -V && \
+                python:3.11-slim sh -lc "python -V && \
                   python -m pip install -U pip && \
                   if [ -f requirements-dev.txt ]; then pip install --prefer-binary -r requirements-dev.txt; fi && \
                   if [ -f requirements.txt ]; then pip install --prefer-binary -r requirements.txt; fi && \
                   pip install --prefer-binary -U pytest pytest-cov coverage && \
                   mkdir -p reports && \
-                  pytest -q --junitxml=reports/junit.xml --cov=. --cov-report=xml:reports/coverage.xml --cov-report=term && \
-                  coverage html -d reports/html || true"
+                  pytest -q --junitxml=reports/junit.xml --cov=. --cov-report=xml:reports/coverage.xml --cov-report=term; \
+                  rc=\\$?; coverage html -d reports/html || true; exit \\$rc"
             '''
           }
         }
       }
       post {
         always {
+          // JUnit test results
           junit allowEmptyResults: true, testResults: 'reports/junit.xml'
-          // Use recordCoverage (your Jenkins has this; the other adapter was missing)
+
+          // Coverage via Code Coverage API plugin
           recordCoverage tools: [cobertura('reports/coverage.xml')]
-          publishHTML([reportDir: 'reports/html', reportFiles: 'index.html', reportName: 'Coverage HTML'])
+
+          // Publish HTML coverage (HTML Publisher plugin requires these flags)
+          publishHTML([
+            reportDir: 'reports/html',
+            reportFiles: 'index.html',
+            reportName: 'Coverage HTML',
+            allowMissing: true,
+            keepAll: false,
+            alwaysLinkToLastBuild: true
+          ])
+
+          // Keep raw artifacts too
           archiveArtifacts artifacts: 'reports/**', fingerprint: true
         }
       }
@@ -145,3 +156,4 @@ pipeline {
     always { archiveArtifacts artifacts: 'dist/**', allowEmptyArchive: true }
   }
 }
+
