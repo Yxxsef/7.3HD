@@ -85,14 +85,17 @@ pipeline {
       post {
         always {
           junit allowEmptyResults: true, testResults: 'reports/junit.xml'
-          publishHTML(targets: [[
+
+          // HTML Publisher - legacy single-report syntax (compatible with old plugin)
+          publishHTML(
+            allowMissing: true,
+            alwaysLinkToLastBuild: true,
+            keepAll: false,
             reportDir: 'reports/html',
             reportFiles: 'index.html',
-            reportName: 'Coverage HTML',
-            allowMissing: true,
-            keepAll: false,
-            alwaysLinkToLastBuild: true
-          ]])
+            reportName: 'Coverage HTML'
+          )
+
           archiveArtifacts artifacts: 'reports/**', fingerprint: true
         }
       }
@@ -122,9 +125,7 @@ pipeline {
       }
     }
 
-    stage('Package') {
-      steps { script { writeFile file: 'dist/ok.txt', text: 'ok\n' } }
-    }
+    stage('Package') { steps { script { writeFile file: 'dist/ok.txt', text: 'ok\n' } } }
   }
 
   post { always { archiveArtifacts artifacts: 'dist/**', allowEmptyArchive: true } }
