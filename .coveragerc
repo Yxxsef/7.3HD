@@ -5,7 +5,6 @@ relative_files = True
 [paths]
 source =
     .
-    /src
     C:\jenkins\agent\workspace\*\app
 
 [report]
