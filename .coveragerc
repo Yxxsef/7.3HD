@@ -1,12 +1,10 @@
+# .coveragerc
 [run]
 source = app
 relative_files = True
 
 [paths]
 source =
-    .
+    app
+    /src/app
     C:\jenkins\agent\workspace\*\app
-
-[report]
-omit =
-    tests/*
