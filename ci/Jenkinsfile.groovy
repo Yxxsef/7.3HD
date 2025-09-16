@@ -1,43 +1,7 @@
 pipeline {
-  agent { label 'docker' }
-  tools { nodejs 'NodeLTS' }
-  options {
-    timestamps()
-    buildDiscarder(logRotator(numToKeepStr: '10'))
-    skipDefaultCheckout(true)
-  }
+  agent any
   stages {
     stage('Checkout'){ steps { checkout scm } }
-    stage('Build'){ steps { sh 'echo build' } }
-    stage('Test'){  steps { sh 'echo test' } }
-    stage('Sonar') {
-      environment { SCANNER_HOME = tool 'SonarScanner' }
-      steps {
-        withSonarQubeEnv('7.3HD') {
-          sh """
-            ${SCANNER_HOME}/bin/sonar-scanner \
-              -Dsonar.organization=yxxsef \
-              -Dsonar.projectKey=yxxsef_7-3hd \
-              -Dsonar.projectName=7.3HD \
-              -Dsonar.sources=. \
-              -Dsonar.exclusions=node_modules/**,dist/**,**/*.test.js,**/*.spec.js
-          """
-        }
-      }
-    }
-    stage('Env check'){
-      steps {
-        // Do not fail build if Docker isn't present yet
-        sh 'node -v || true; docker --version || true'
-      }
-    }
-    stage('Package'){ steps { sh 'mkdir -p dist && echo build > dist/artifact.txt' } }
-  }
-  post {
-    always {
-      archiveArtifacts artifacts: 'dist/**,build/**',
-                       fingerprint: true,
-                       allowEmptyArchive: true
-    }
+    stage('Ping'){ steps { echo "Hook OK on ${env.NODE_NAME}. SHA=${env.GIT_COMMIT?.take(7)}" } }
   }
 }
