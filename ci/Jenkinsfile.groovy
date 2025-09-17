@@ -116,20 +116,14 @@ stage('Code Quality (Sonar)') {
 
 stage('Security') {
   steps {
-    script {
-      // Make the stage non-blocking if the cred is missing (optional)
-      catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-        withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-          powershell '''
-            $ErrorActionPreference = "Stop"
-            docker run --rm `
-              -e SNYK_TOKEN=$env:SNYK_TOKEN `
-              -v "$pwd:/project" -w /project `
-              snyk/snyk:docker `
-              snyk test --package-manager=pip --file=requirements.txt --severity-threshold=high
-          '''
-        }
-      }
+    withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+      powershell '''
+        $ErrorActionPreference = "Stop"
+        docker run --rm `
+          -e SNYK_TOKEN=$env:SNYK_TOKEN `
+          -v "$pwd:/project" -w /project `
+          snyk/snyk:docker snyk test --package-manager=pip --file=requirements.txt --severity-threshold=high
+      '''
     }
   }
 }
