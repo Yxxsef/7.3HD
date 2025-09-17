@@ -26,24 +26,37 @@ pipeline {
     }
 
     stage('Push') {
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'dockerhub-creds',
-          usernameVariable: 'DH_USER',
-          passwordVariable: 'DH_PASS'
-        )]) {
-          powershell '''
-            $ErrorActionPreference = "Stop"
-            docker logout 2>$null | Out-Null
-            ($env:DH_PASS).Trim() | docker login -u $env:DH_USER --password-stdin
-            docker info | Select-String '^ Username'
-            docker push "$env:IMAGE"
-            docker tag "$env:IMAGE" "$env:DOCKERHUB_REPO:latest"
-            docker push "$env:DOCKERHUB_REPO:latest"
-          '''
-        }
-      }
+  steps {
+    withCredentials([usernamePassword(
+      credentialsId: 'dockerhub-creds',
+      usernameVariable: 'DH_USER',
+      passwordVariable: 'DH_PASS'
+    )]) {
+      powershell '''
+        $ErrorActionPreference = "Stop"
+
+        # Use a local docker config so we don't hit the Desktop credStore
+        $env:DOCKER_CONFIG = Join-Path $PWD ".docker"
+        New-Item -ItemType Directory -Force -Path $env:DOCKER_CONFIG | Out-Null
+        '{"auths":{}}' | Out-File -Encoding ascii -FilePath (Join-Path $env:DOCKER_CONFIG "config.json")
+
+        # Make sure we’re on Desktop’s engine
+        docker context use desktop-linux | Out-Null
+
+        # Login with your Docker Hub PAT
+        $env:DH_PASS | docker login --username $env:DH_USER --password-stdin docker.io
+
+        # Tag and push both the commit tag and 'latest'
+        docker tag "$env:IMAGE" "$env:DOCKERHUB_REPO:latest"
+        docker push "$env:IMAGE"
+        docker push "$env:DOCKERHUB_REPO:latest"
+
+        docker logout docker.io
+      '''
     }
+  }
+}
+
 
     stage('Test') {
       steps {
