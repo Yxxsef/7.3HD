@@ -1,6 +1,6 @@
 pipeline {
   agent { label 'docker' }
-  options { timestamps(); ansiColor('xterm'); buildDiscarder(logRotator(numToKeepStr: '20')) }
+  options { timestamps(); buildDiscarder(logRotator(numToKeepStr: '20')) }
   environment {
     DOCKERHUB_REPO = 'yourDockerUser/fastapi-app'     // <— CHANGE ME
     IMAGE = "${DOCKERHUB_REPO}:${GIT_COMMIT}"
