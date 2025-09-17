@@ -58,14 +58,13 @@ pipeline {
 }
 
 
-    stage('Test') {
+stage('Test') {
   steps {
     powershell '''
       $ErrorActionPreference = "Stop"
-      # Use the Jenkins workspace path and normalize slashes for Docker
-      $work = $env:WORKSPACE -replace '\\','/'
+      $work = (Get-Location).Path
 
-      docker run --rm -v "$work:/app" -w /app python:3.11-slim /bin/sh -lc '
+      docker run --rm -v "${work}:/app" -w /app python:3.11-slim sh -lc "
         python -m pip install --upgrade pip &&
         pip install -r requirements.txt &&
         pip install pytest pytest-cov &&
@@ -75,13 +74,20 @@ pipeline {
                --cov-report=xml:coverage.xml \
                --cov-report=html:htmlcov \
                --cov-fail-under=80
-      '
+      "
     '''
     junit 'reports/junit.xml'
-    publishHTML target: [ reportName: 'Coverage', reportDir: 'htmlcov',
-      reportFiles: 'index.html', keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true ]
+    publishHTML target: [
+      reportName: 'Coverage',
+      reportDir: 'htmlcov',
+      reportFiles: 'index.html',
+      keepAll: true,
+      alwaysLinkToLastBuild: true,
+      allowMissing: true
+    ]
   }
 }
+
 
 
     stage('Code Quality (Sonar)') {
