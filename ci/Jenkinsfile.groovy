@@ -113,15 +113,28 @@ stage('Code Quality (Sonar)') {
 
 
 
-
 stage('Security') {
   steps {
     withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
       powershell '''
         $ErrorActionPreference = "Stop"
+        mkdir reports -ea 0 | Out-Null
+
         snyk auth $env:SNYK_TOKEN
-        snyk test --severity-threshold=high --json-file-output reports/snyk.json
+
+        # Dependency scan
+        snyk test --severity-threshold=high `
+          --json-file-output=reports/snyk-deps.json
+
+        # (Optional) Snyk Code scan
+        snyk code test --severity-threshold=high `
+          --json-file-output=reports/snyk-code.json
       '''
+    }
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'reports/*.json', fingerprint: true
     }
   }
 }
