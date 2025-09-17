@@ -98,15 +98,18 @@ stage('Code Quality (Sonar)') {
     withSonarQubeEnv('sonar') {
       script {
         def scannerHome = tool 'sonar-scanner'
-        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
-            "-Dsonar.projectKey=Yxxsef_7.3HD " +
-            "-Dsonar.organization=yxxsef " +
-            "-Dsonar.sources=app " +
-            "-Dsonar.python.coverage.reportPaths=coverage.xml"
+        bat """
+          "${scannerHome}\\bin\\sonar-scanner.bat" ^
+            -Dsonar.projectKey=Yxxsef_7.3HD ^
+            -Dsonar.organization=yxxsef ^
+            -Dsonar.sources=app ^
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+        """
       }
     }
   }
 }
+
 
 
 
