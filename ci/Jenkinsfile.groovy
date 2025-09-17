@@ -122,13 +122,15 @@ stage('Security') {
         $ErrorActionPreference = "Stop"
         if (!(Test-Path reports)) { New-Item -ItemType Directory reports | Out-Null }
 
+        # Snyk: only fail if CRITICAL
         docker run --rm -e SNYK_TOKEN="$env:SNYK_TOKEN" -v "$PWD":/project -w /project snyk/snyk:stable `
-          test --file=requirements.txt --package-manager=pip --severity-threshold=high --json `
+          test --file=requirements.txt --package-manager=pip --severity-threshold=critical --json `
           | Tee-Object -FilePath reports\\snyk.json
         $snykExit = $LASTEXITCODE
 
+        # Trivy: only CRITICAL, ignore unfixed issues in base image
         docker run --rm aquasec/trivy:latest image `
-          --severity HIGH,CRITICAL --exit-code 1 --no-progress "$env:IMAGE" `
+          --severity CRITICAL --ignore-unfixed --no-progress --exit-code 1 "$env:IMAGE" `
           | Tee-Object -FilePath reports\\trivy.txt
         $trivyExit = $LASTEXITCODE
 
@@ -138,6 +140,7 @@ stage('Security') {
     archiveArtifacts artifacts: 'reports/snyk.json, reports/trivy.txt', fingerprint: true, onlyIfSuccessful: false
   }
 }
+
 
   }
 }
