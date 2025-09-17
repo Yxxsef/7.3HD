@@ -94,25 +94,20 @@ stage('Test') {
 
 
 stage('Code Quality (Sonar)') {
-  environment {
-    SCANNER_HOME = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-  }
   steps {
-    withSonarQubeEnv('sonar') {
-      powershell '''
-        Write-Host "SCANNER_HOME=$env:SCANNER_HOME"
-        Get-ChildItem "$env:SCANNER_HOME\\bin" | Out-Host   # sanity check
-        & "$env:SCANNER_HOME\\bin\\sonar-scanner.bat" `
-          -Dsonar.organization=yxxsef `
-          -Dsonar.projectKey=yxxsef_7.3HD `
-          -Dsonar.sources=app `
-          -Dsonar.tests=app/tests `
-          -Dsonar.python.coverage.reportPaths=coverage.xml `
-          -Dsonar.token=$env:SONAR_AUTH_TOKEN
-      '''
+    withSonarQubeEnv('sonar') {                     // uses the server config from step 1
+      script {
+        def scannerHome = tool 'sonar-scanner'      // uses the tool from step 2
+        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" ^
+          -Dsonar.projectKey=Yxxsef_7.3HD ^
+          -Dsonar.organization=yxxsef ^
+          -Dsonar.sources=app ^
+          -Dsonar.python.coverage.reportPaths=coverage.xml"
+      }
     }
   }
 }
+
 
 
 
