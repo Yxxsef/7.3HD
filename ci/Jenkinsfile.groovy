@@ -120,20 +120,20 @@ stage('Security') {
       powershell '''
         $ErrorActionPreference = "Stop"
         if (!(Test-Path reports)) { New-Item -ItemType Directory reports | Out-Null }
-        $work = (Convert-Path .)
+        $work = Convert-Path .
 
-        # SNYK — one-liner, no backticks; call "snyk test" explicitly
+        # --- SNYK (single command; correct -v quoting) ---
         docker run --rm `
-          -e SNYK_TOKEN="$env:SNYK_TOKEN" `
-          -v "$work:/project" -w /project `
+          -e "SNYK_TOKEN=$env:SNYK_TOKEN" `
+          -v "${work}:/project" -w /project `
           snyk/snyk:stable snyk test --file=requirements.txt --package-manager=pip --severity-threshold=high --json `
-          | Tee-Object -FilePath reports\\snyk.json
+          | Tee-Object -FilePath "reports\\snyk.json"
         $snykExit = $LASTEXITCODE
 
-        # TRIVY — you already look clean
+        # --- TRIVY ---
         docker run --rm aquasec/trivy:latest image `
           --severity HIGH,CRITICAL --no-progress --exit-code 1 "$env:IMAGE" `
-          | Tee-Object -FilePath reports\\trivy.txt
+          | Tee-Object -FilePath "reports\\trivy.txt"
         $trivyExit = $LASTEXITCODE
 
         if ($snykExit -ne 0 -or $trivyExit -ne 0) { exit 1 }
@@ -142,6 +142,7 @@ stage('Security') {
     archiveArtifacts artifacts: 'reports/snyk.json, reports/trivy.txt', fingerprint: true, onlyIfSuccessful: false
   }
 }
+
 
 
 
