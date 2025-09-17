@@ -26,31 +26,36 @@ environment {
         archiveArtifacts artifacts: 'build/**', fingerprint: true
       }
     }
-    stage('Push') {
+stage('Push') {
   steps {
-    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
-                                      usernameVariable: 'DH_USER',
-                                      passwordVariable: 'DH_PASS')]) {
+    withCredentials([usernamePassword(
+        credentialsId: 'dockerhub-creds',
+        usernameVariable: 'DH_USER',
+        passwordVariable: 'DH_PASS'
+    )]) {
       powershell '''
         $ErrorActionPreference = "Stop"
+
+        # (optional) start clean so old logins don't interfere
         docker logout 2>$null | Out-Null
 
-        # safer password-stdin on Windows
-        $p = Start-Process -FilePath docker -ArgumentList @("login","-u",$env:DH_USER,"--password-stdin") `
-             -PassThru -NoNewWindow -RedirectStandardInput "STDIN"
-        $sw = New-Object System.IO.StreamWriter($p.StandardInput.BaseStream)
-        $sw.Write($env:DH_PASS); $sw.Close(); $p.WaitForExit()
-        if ($p.ExitCode -ne 0) { throw "Docker login failed for $env:DH_USER" }
+        # Docker Hub PAT is in $env:DH_PASS — trim CRLF just in case
+        ($env:DH_PASS).Trim() | docker login -u $env:DH_USER --password-stdin
 
+        # sanity check Jenkins really logged in as yousxf
         docker info | Select-String '^ Username'
+
+        # push the commit-tagged image
         docker push "$env:IMAGE"
+
+        # (optional) also tag+push :latest
+        docker tag "$env:IMAGE" "$env:DOCKERHUB_REPO:latest"
+        docker push "$env:DOCKERHUB_REPO:latest"
       '''
     }
   }
 }
-
-
-    stage('Test') {
+age('Test') {
       steps {
         powershell '''
           $ErrorActionPreference = "Stop"
