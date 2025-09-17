@@ -1,9 +1,11 @@
-﻿version: "3.8"
-services:
-  api:
-    build: .
-    image: yourdocker/7.3hd-api:staging
-    ports: ["9000:8000"]
-    environment:
-      - PYTHONUNBUFFERED=1
+﻿services:
+  app:
+    image: yousxf/fastapi-app:ac2025c
+    container_name: myapp-api-1
+    ports: ["8081:8000"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

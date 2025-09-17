@@ -1,9 +1,14 @@
-﻿version: "3.8"
-services:
-  api:
-    build: .
-    image: yourdocker/7.3hd-api:prod
-    ports: ["9000:8000"]
-    environment:
-      - PYTHONUNBUFFERED=1
-    restart: always
+﻿services:
+  app_blue:
+    image: yousxf/fastapi-app:ac2025c
+    container_name: prod_app_blue
+    profiles: ["blue"]
+    ports: ["8080:8000"]
+    restart: unless-stopped
+
+  app_green:
+    image: yousxf/fastapi-app:ac2025c
+    container_name: prod_app_green
+    profiles: ["green"]
+    ports: ["8080:8000"]
+    restart: unless-stopped
