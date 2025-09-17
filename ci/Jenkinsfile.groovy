@@ -59,32 +59,30 @@ pipeline {
 
 
     stage('Test') {
-      steps {
-        powershell '''
-          $ErrorActionPreference = "Stop"
-          docker run --rm -v "$PWD":/app -w /app python:3.11-slim sh -lc "
-            python -m pip install --upgrade pip &&
-            pip install -r requirements.txt &&
-            pip install pytest pytest-cov &&
-            mkdir -p reports &&
-            pytest -q --junitxml=reports/junit.xml \
-                   --cov=app \
-                   --cov-report=xml:coverage.xml \
-                   --cov-report=html:htmlcov \
-                   --cov-fail-under=80
-          "
-        '''
-        junit 'reports/junit.xml'
-        publishHTML target: [
-          reportName: 'Coverage',
-          reportDir: 'htmlcov',
-          reportFiles: 'index.html',
-          keepAll: true,
-          alwaysLinkToLastBuild: true,
-          allowMissing: true
-        ]
-      }
-    }
+  steps {
+    powershell '''
+      $ErrorActionPreference = "Stop"
+      # Use the Jenkins workspace path and normalize slashes for Docker
+      $work = $env:WORKSPACE -replace '\\','/'
+
+      docker run --rm -v "$work:/app" -w /app python:3.11-slim /bin/sh -lc '
+        python -m pip install --upgrade pip &&
+        pip install -r requirements.txt &&
+        pip install pytest pytest-cov &&
+        mkdir -p reports &&
+        pytest -q --junitxml=reports/junit.xml \
+               --cov=app \
+               --cov-report=xml:coverage.xml \
+               --cov-report=html:htmlcov \
+               --cov-fail-under=80
+      '
+    '''
+    junit 'reports/junit.xml'
+    publishHTML target: [ reportName: 'Coverage', reportDir: 'htmlcov',
+      reportFiles: 'index.html', keepAll: true, alwaysLinkToLastBuild: true, allowMissing: true ]
+  }
+}
+
 
     stage('Code Quality (Sonar)') {
       steps {
