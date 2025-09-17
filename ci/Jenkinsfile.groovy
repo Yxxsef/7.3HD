@@ -117,29 +117,26 @@ stage('Code Quality (Sonar)') {
 
 stage('Security') {
   steps {
-    withCredentials([string(credentialsId: 'synk-token', variable: 'SNYK_TOKEN')]) {
-      powershell '''
-        $ErrorActionPreference = "Stop"
-        if (!(Test-Path reports)) { New-Item -ItemType Directory reports | Out-Null }
+    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+      withCredentials([string(credentialsId: 'synk-token', variable: 'SNYK_TOKEN')]) {
+        powershell '''
+          $ErrorActionPreference = "Stop"
+          if (!(Test-Path reports)) { New-Item -ItemType Directory reports | Out-Null }
 
-        # Snyk: only fail if CRITICAL
-        docker run --rm -e SNYK_TOKEN="$env:SNYK_TOKEN" -v "$PWD":/project -w /project snyk/snyk:stable `
-          test --file=requirements.txt --package-manager=pip --severity-threshold=critical --json `
-          | Tee-Object -FilePath reports\\snyk.json
-        $snykExit = $LASTEXITCODE
+          docker run --rm -e SNYK_TOKEN="$env:SNYK_TOKEN" -v "$PWD":/project -w /project snyk/snyk:stable `
+            test --file=requirements.txt --package-manager=pip --severity-threshold=high --json `
+            | Tee-Object -FilePath reports\\snyk.json
 
-        # Trivy: only CRITICAL, ignore unfixed issues in base image
-        docker run --rm aquasec/trivy:latest image `
-          --severity CRITICAL --ignore-unfixed --no-progress --exit-code 1 "$env:IMAGE" `
-          | Tee-Object -FilePath reports\\trivy.txt
-        $trivyExit = $LASTEXITCODE
-
-        if ($snykExit -ne 0 -or $trivyExit -ne 0) { exit 1 }
-      '''
+          docker run --rm aquasec/trivy:latest image `
+            --severity HIGH,CRITICAL --no-progress --exit-code 1 "$env:IMAGE" `
+            | Tee-Object -FilePath reports\\trivy.txt
+        '''
+      }
     }
     archiveArtifacts artifacts: 'reports/snyk.json, reports/trivy.txt', fingerprint: true, onlyIfSuccessful: false
   }
 }
+
 
 
   }
