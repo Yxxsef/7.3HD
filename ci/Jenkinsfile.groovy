@@ -95,18 +95,19 @@ stage('Test') {
 
 stage('Code Quality (Sonar)') {
   steps {
-    withSonarQubeEnv('sonar') {                     // uses the server config from step 1
+    withSonarQubeEnv('sonar') {
       script {
-        def scannerHome = tool 'sonar-scanner'      // uses the tool from step 2
-        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" ^
-          -Dsonar.projectKey=Yxxsef_7.3HD ^
-          -Dsonar.organization=yxxsef ^
-          -Dsonar.sources=app ^
-          -Dsonar.python.coverage.reportPaths=coverage.xml"
+        def scannerHome = tool 'sonar-scanner'
+        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
+            "-Dsonar.projectKey=Yxxsef_7.3HD " +
+            "-Dsonar.organization=yxxsef " +
+            "-Dsonar.sources=app " +
+            "-Dsonar.python.coverage.reportPaths=coverage.xml"
       }
     }
   }
 }
+
 
 
 
