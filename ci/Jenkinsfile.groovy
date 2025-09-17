@@ -119,14 +119,13 @@ stage('Security') {
     withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
       powershell '''
         $ErrorActionPreference = "Stop"
-        docker run --rm `
-          -e SNYK_TOKEN=$env:SNYK_TOKEN `
-          -v "$pwd:/project" -w /project `
-          snyk/snyk:docker snyk test --package-manager=pip --file=requirements.txt --severity-threshold=high
+        snyk auth $env:SNYK_TOKEN
+        snyk test --severity-threshold=high --json-file-output reports/snyk.json
       '''
     }
   }
 }
+
 
 
 
