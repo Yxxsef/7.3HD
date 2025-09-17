@@ -94,23 +94,24 @@ stage('Test') {
 
 
     stage('Code Quality (Sonar)') {
-      steps {
-        withSonarQubeEnv('7.3HD') {
-          powershell '''
-            $ErrorActionPreference = "Stop"
-            docker run --rm `
-              -e SONAR_HOST_URL=$env:SONAR_HOST_URL `
-              -e SONAR_LOGIN=$env:SONAR_AUTH_TOKEN `
-              -v "$PWD":/usr/src `
-              sonarsource/sonar-scanner-cli `
-              -Dsonar.python.coverage.reportPaths=coverage.xml
-          '''
-        }
-        timeout(time: 3, unit: 'MINUTES') {
-          waitForQualityGate abortPipeline: true
-        }
+  steps {
+    withSonarQubeEnv('sonar') {
+      script {
+        def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+        powershell """
+          & "${scannerHome}\\bin\\sonar-scanner.bat" `
+            -Dsonar.host.url=${env.SONAR_HOST_URL} `
+            -Dsonar.organization=yxxsef `
+            -Dsonar.projectKey=yxxsef_7.3HD `
+            -Dsonar.sources=app `
+            -Dsonar.tests=app/tests `
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+        """
       }
     }
+  }
+}
+
 
     stage('Security') {
       steps {
