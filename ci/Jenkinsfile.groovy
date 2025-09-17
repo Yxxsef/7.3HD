@@ -94,25 +94,26 @@ stage('Test') {
 
 
 stage('Code Quality (Sonar)') {
+  environment {
+    SCANNER_HOME = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+  }
   steps {
     withSonarQubeEnv('sonar') {
-      script {
-        def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-        // If you put a sonar-project.properties in the repo, you can omit most -D args below.
-        powershell """
-          & "${scannerHome}\\bin\\sonar-scanner.bat" `
-            -Dsonar.host.url=$env:SONAR_HOST_URL `
-            -Dsonar.organization=yxxsef `
-            -Dsonar.projectKey=yxxsef_7.3HD `
-            -Dsonar.sources=app `
-            -Dsonar.tests=app/tests `
-            -Dsonar.python.coverage.reportPaths=coverage.xml `
-            -Dsonar.token=$env:SONAR_AUTH_TOKEN
-        """
-      }
+      powershell '''
+        Write-Host "SCANNER_HOME=$env:SCANNER_HOME"
+        Get-ChildItem "$env:SCANNER_HOME\\bin" | Out-Host   # sanity check
+        & "$env:SCANNER_HOME\\bin\\sonar-scanner.bat" `
+          -Dsonar.organization=yxxsef `
+          -Dsonar.projectKey=yxxsef_7.3HD `
+          -Dsonar.sources=app `
+          -Dsonar.tests=app/tests `
+          -Dsonar.python.coverage.reportPaths=coverage.xml `
+          -Dsonar.token=$env:SONAR_AUTH_TOKEN
+      '''
     }
   }
 }
+
 
 
 
