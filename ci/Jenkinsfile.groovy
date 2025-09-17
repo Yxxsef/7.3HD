@@ -115,48 +115,29 @@ stage('Code Quality (Sonar)') {
 
 
 
+stage('Security') {
+  steps {
+    withCredentials([string(credentialsId: 'synk-token', variable: 'SNYK_TOKEN')]) {
+      powershell '''
+        $ErrorActionPreference = "Stop"
+        if (!(Test-Path reports)) { New-Item -ItemType Directory reports | Out-Null }
 
-    stage('Security') {
-      steps {
-        withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-          powershell '''
-            $ErrorActionPreference = "Stop"
-            if (!(Test-Path reports)) { New-Item -ItemType Directory reports | Out-Null }
+        docker run --rm -e SNYK_TOKEN="$env:SNYK_TOKEN" -v "$PWD":/project -w /project snyk/snyk:stable `
+          test --file=requirements.txt --package-manager=pip --severity-threshold=high --json `
+          | Tee-Object -FilePath reports\\snyk.json
+        $snykExit = $LASTEXITCODE
 
-            docker run --rm -e SNYK_TOKEN="$env:SNYK_TOKEN" -v "$PWD":/project -w /project snyk/snyk:stable `
-              test --severity-threshold=high --json `
-              | Tee-Object -FilePath reports\\snyk.json
-            $snykExit = $LASTEXITCODE
+        docker run --rm aquasec/trivy:latest image `
+          --severity HIGH,CRITICAL --exit-code 1 --no-progress "$env:IMAGE" `
+          | Tee-Object -FilePath reports\\trivy.txt
+        $trivyExit = $LASTEXITCODE
 
-            docker run --rm aquasec/trivy:latest image `
-              --severity HIGH,CRITICAL --exit-code 1 --no-progress "$env:IMAGE" `
-              | Tee-Object -FilePath reports\\trivy.txt
-            $trivyExit = $LASTEXITCODE
-
-            if ($snykExit -ne 0 -or $trivyExit -ne 0) { exit 1 }
-          '''
-        }
-        archiveArtifacts artifacts: 'reports/snyk.json, reports/trivy.txt', fingerprint: true, onlyIfSuccessful: false
-      }
+        if ($snykExit -ne 0 -or $trivyExit -ne 0) { exit 1 }
+      '''
     }
-  } // end stages
+    archiveArtifacts artifacts: 'reports/snyk.json, reports/trivy.txt', fingerprint: true, onlyIfSuccessful: false
+  }
+}
 
-  post {
-    success {
-      withCredentials([string(credentialsId: 'slack-token', variable: 'SLACK_WEBHOOK')]) {
-        powershell '''
-          $payload = @{ text = "✅ Passed: $env:JOB_NAME #$env:BUILD_NUMBER`n$env:BUILD_URL" } | ConvertTo-Json
-          Invoke-RestMethod -Uri $env:SLACK_WEBHOOK -Method Post -ContentType "application/json" -Body $payload | Out-Null
-        '''
-      }
-    }
-    failure {
-      withCredentials([string(credentialsId: 'slack-token', variable: 'SLACK_WEBHOOK')]) {
-        powershell '''
-          $payload = @{ text = "❌ Failed: $env:JOB_NAME #$env:BUILD_NUMBER`n$env:BUILD_URL" } | ConvertTo-Json
-          Invoke-RestMethod -Uri $env:SLACK_WEBHOOK -Method Post -ContentType "application/json" -Body $payload | Out-Null
-        '''
-      }
-    }
   }
 }
