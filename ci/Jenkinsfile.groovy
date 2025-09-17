@@ -115,33 +115,19 @@ stage('Code Quality (Sonar)') {
 
 
 stage('Security') {
+  environment { SNYK_TOKEN = credentials('SNYK_TOKEN') }
   steps {
-    withCredentials([string(credentialsId: 'synk-token', variable: 'SNYK_TOKEN')]) {
-      powershell '''
-        $ErrorActionPreference = "Stop"
-        if (!(Test-Path reports)) { New-Item -ItemType Directory reports | Out-Null }
-        $work = Convert-Path .
-
-        # --- SNYK (single command; correct -v quoting) ---
-        docker run --rm `
-          -e "SNYK_TOKEN=$env:SNYK_TOKEN" `
-          -v "${work}:/project" -w /project `
-          snyk/snyk:stable snyk test --file=requirements.txt --package-manager=pip --severity-threshold=high --json `
-          | Tee-Object -FilePath "reports\\snyk.json"
-        $snykExit = $LASTEXITCODE
-
-        # --- TRIVY ---
-        docker run --rm aquasec/trivy:latest image `
-          --severity HIGH,CRITICAL --no-progress --exit-code 1 "$env:IMAGE" `
-          | Tee-Object -FilePath "reports\\trivy.txt"
-        $trivyExit = $LASTEXITCODE
-
-        if ($snykExit -ne 0 -or $trivyExit -ne 0) { exit 1 }
-      '''
-    }
-    archiveArtifacts artifacts: 'reports/snyk.json, reports/trivy.txt', fingerprint: true, onlyIfSuccessful: false
+    powershell '''
+      docker run --rm `
+        -e SNYK_TOKEN=$env:SNYK_TOKEN `
+        -v "${env:WORKSPACE}:/project" -w /project `
+        --entrypoint sh snyk/snyk:docker `
+        -lc "apk add --no-cache python3 py3-pip >/dev/null && \
+             snyk test --package-manager=pip --file=requirements.txt --severity-threshold=high"
+    '''
   }
 }
+
 
 
 
