@@ -64,17 +64,19 @@ stage('Test') {
       $ErrorActionPreference = "Stop"
       $work = (Get-Location).Path
 
-      docker run --rm -v "${work}:/app" -w /app python:3.11-slim sh -lc "
-        python -m pip install --upgrade pip &&
-        pip install -r requirements.txt &&
-        pip install pytest pytest-cov &&
-        mkdir -p reports &&
-        pytest -q --junitxml=reports/junit.xml \
-               --cov=app \
-               --cov-report=xml:coverage.xml \
-               --cov-report=html:htmlcov \
-               --cov-fail-under=80
-      "
+      docker run --rm `
+        -e PYTHONPATH=/app `
+        -v "${work}:/app" -w /app python:3.11-slim sh -lc "
+          python -m pip install --upgrade pip &&
+          pip install -r requirements.txt &&
+          pip install pytest pytest-cov &&
+          mkdir -p reports &&
+          python -m pytest -q --junitxml=reports/junit.xml \
+                 --cov=app \
+                 --cov-report=xml:coverage.xml \
+                 --cov-report=html:htmlcov \
+                 --cov-fail-under=80
+        "
     '''
     junit 'reports/junit.xml'
     publishHTML target: [
@@ -87,6 +89,7 @@ stage('Test') {
     ]
   }
 }
+
 
 
 
