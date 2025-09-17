@@ -115,16 +115,17 @@ stage('Code Quality (Sonar)') {
 
 
 stage('Security') {
-  environment { SNYK_TOKEN = credentials('SNYK_TOKEN') }
   steps {
-    powershell '''
-      docker run --rm `
-        -e SNYK_TOKEN=$env:SNYK_TOKEN `
-        -v "${env:WORKSPACE}:/project" -w /project `
-        --entrypoint sh snyk/snyk:docker `
-        -lc "apk add --no-cache python3 py3-pip >/dev/null && \
-             snyk test --package-manager=pip --file=requirements.txt --severity-threshold=high"
-    '''
+    withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+      powershell '''
+        $ErrorActionPreference = "Stop"
+        docker run --rm `
+          -e SNYK_TOKEN=$env:SNYK_TOKEN `
+          -v "$pwd:/project" -w /project `
+          snyk/snyk:docker `
+          snyk test --package-manager=pip --file=requirements.txt --severity-threshold=high
+      '''
+    }
   }
 }
 
