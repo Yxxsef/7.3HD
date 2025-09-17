@@ -23,16 +23,32 @@ environment {
           # capture the image ID/digest-ish info for evidence
           docker image inspect "$env:IMAGE" --format "{{.Id}}" | Tee-Object -FilePath build\\image.txt
         '''
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          powershell '''
-            $ErrorActionPreference = "Stop"
-            echo $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
-            docker push "$env:IMAGE"
-          '''
-        }
         archiveArtifacts artifacts: 'build/**', fingerprint: true
       }
     }
+    stage('Push') {
+  steps {
+    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
+                                      usernameVariable: 'DH_USER',
+                                      passwordVariable: 'DH_PASS')]) {
+      powershell '''
+        $ErrorActionPreference = "Stop"
+        docker logout 2>$null | Out-Null
+
+        # safer password-stdin on Windows
+        $p = Start-Process -FilePath docker -ArgumentList @("login","-u",$env:DH_USER,"--password-stdin") `
+             -PassThru -NoNewWindow -RedirectStandardInput "STDIN"
+        $sw = New-Object System.IO.StreamWriter($p.StandardInput.BaseStream)
+        $sw.Write($env:DH_PASS); $sw.Close(); $p.WaitForExit()
+        if ($p.ExitCode -ne 0) { throw "Docker login failed for $env:DH_USER" }
+
+        docker info | Select-String '^ Username'
+        docker push "$env:IMAGE"
+      '''
+    }
+  }
+}
+
 
     stage('Test') {
       steps {
