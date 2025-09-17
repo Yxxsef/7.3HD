@@ -6,11 +6,11 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
-  environment {
-    // TODO: change this to your Docker Hub repo
-    DOCKERHUB_REPO = 'yousxf/7.3hd'
-    IMAGE = "${DOCKERHUB_REPO}:${GIT_COMMIT}"
-  }
+environment {
+  DOCKERHUB_REPO = 'yousxf/7.3hd'
+  IMAGE = "${DOCKERHUB_REPO}:${GIT_COMMIT}"
+}
+
 
   stages {
 
