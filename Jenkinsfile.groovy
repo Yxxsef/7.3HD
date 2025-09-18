@@ -84,84 +84,44 @@ pipeline {
       }
     }
 
+
+
+    
 stage('Quality Gate (poll)') {
-  steps {
-    withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
-      powershell '''
+  withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+    powershell '''
 $ErrorActionPreference = "Stop"
 
-# --- Parse .scannerwork\\report-task.txt ---
-$kv = @{}
-Get-Content ".scannerwork\\report-task.txt" | ForEach-Object {
-  if ($_ -match '^\\s*([^=]+)=(.*)$') { $kv[$matches[1]] = $matches[2] }
-}
+# Read CE task info that the scanner created
+$rt = Get-Content ".scannerwork/report-task.txt" | ConvertFrom-StringData
+$ceTaskId    = $rt['ceTaskId']
+$server      = $rt['serverUrl']            # e.g. https://sonarcloud.io
+$projectKey  = "Yxxsef_7.3HD"
+$organization= "yxxsef"
+$headers     = @{ Authorization = "Bearer $env:SONAR_TOKEN" }
 
-$ceTaskUrl    = $kv["ceTaskUrl"]       # e.g. https://sonarcloud.io/api/ce/task?id=...
-$organization = $kv["organization"]
-if (-not $ceTaskUrl)    { throw "Could not read ceTaskUrl from .scannerwork\\report-task.txt" }
-if (-not $organization) { throw "Could not read organization from .scannerwork\\report-task.txt" }
+if (-not $ceTaskId -or -not $server) { throw "Could not read ceTaskId/serverUrl from .scannerwork/report-task.txt" }
 
-# Ensure organization is on the CE URL (PowerShell 5.1 friendly)
-if ($ceTaskUrl -notmatch '([?&])organization=') {
-  $sep = '?'
-  if ($ceTaskUrl -match '\\?') { $sep = '&' }
-  $ceTaskUrl = "$ceTaskUrl$sep" + "organization=$organization"
-}
-
-# Basic auth for endpoints that need it (quality gate)
-$authHeader = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_TOKEN:"))
-
-function Invoke-Json([string]$url, [bool]$withAuth = $true) {
-  $headers = @{ Accept = 'application/json' }
-  if ($withAuth) { $headers['Authorization'] = $authHeader }
-
-  $delays = 1,2,4,8,16,32
-  for ($i=0; $i -lt $delays.Count; $i++) {
-    try {
-      return Invoke-RestMethod -Headers $headers -Uri $url -Method GET -TimeoutSec 30
-    } catch {
-      $resp = $_.Exception.Response
-      $code = $null
-      if ($resp -and $resp.StatusCode) { $code = [int]$resp.StatusCode }
-      if (($code -ge 500 -or -not $code) -and $i -lt ($delays.Count - 1)) {
-        Start-Sleep -Seconds $delays[$i]
-      } else {
-        throw
-      }
-    }
-  }
-}
-
-Write-Host "Polling SonarCloud CE task: $ceTaskUrl"
-
-# --- Poll CE task (NO AUTH here) ---
-while ($true) {
-  $ce = Invoke-Json $ceTaskUrl $false
-  $state = $ce.task.status
-  if ($state -eq 'SUCCESS') { break }
-  if ($state -in @('FAILED','CANCELED')) { throw "SonarCloud background task ended with status: $state" }
+# 1) Poll CE task (no organization param)
+$deadline = (Get-Date).AddMinutes(5)
+do {
+  $ce = Invoke-RestMethod -Headers $headers -Uri "$server/api/ce/task?id=$ceTaskId" -Method GET
+  $state = $ce.task.status  # PENDING | IN_PROGRESS | SUCCESS | FAILED | CANCELED
+  if ($state -in @('SUCCESS','FAILED','CANCELED')) { break }
   Start-Sleep -Seconds 3
-}
+} while ((Get-Date) -lt $deadline)
 
-$analysisId = $ce.task.analysisId
-if (-not $analysisId) { throw "No analysisId returned from CE task (cannot check quality gate)." }
+if ($state -ne 'SUCCESS') { throw "Sonar CE task status: $state" }
 
-# --- Quality Gate (AUTH required) ---
-$qgUrl = "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysisId&organization=$organization"
-$qg    = Invoke-Json $qgUrl $true
-
-$status = $qg.projectStatus.status
-Write-Host "Quality Gate status: $status"
-
-if ($status -ne 'OK') {
-  $cond = $qg.projectStatus.conditions | ForEach-Object { "$($_.metricKey) $($_.comparator) $($_.errorThreshold) => $($_.actualValue)" }
-  Write-Host ("Conditions:" + [Environment]::NewLine + ($cond -join [Environment]::NewLine))
-  throw "Quality Gate failed: $status"
-}
+# 2) Get Quality Gate (organization IS required here)
+$qg = Invoke-RestMethod -Headers $headers -Uri "$server/api/qualitygates/project_status?projectKey=$projectKey&organization=$organization" -Method GET
+$status = $qg.projectStatus.status  # OK | ERROR | WARN
+Write-Host "Quality Gate: $status"
+if ($status -ne 'OK') { throw "Quality Gate failed: $status" }
 '''
-    }
   }
 }
+
 
 
 
