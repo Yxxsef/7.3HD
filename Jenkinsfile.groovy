@@ -101,10 +101,11 @@ $organization = $kv["organization"]
 if (-not $ceTaskUrl)    { throw "Could not read ceTaskUrl from .scannerwork\\report-task.txt" }
 if (-not $organization) { throw "Could not read organization from .scannerwork\\report-task.txt" }
 
-# Ensure organization is on the CE URL
+# Ensure organization is on the CE URL (PowerShell 5.1 friendly)
 if ($ceTaskUrl -notmatch '([?&])organization=') {
-  $sep = ($ceTaskUrl -match '\\?') ? '&' : '?'
-  $ceTaskUrl = "$ceTaskUrl${sep}organization=$organization"
+  $sep = '?'
+  if ($ceTaskUrl -match '\\?') { $sep = '&' }
+  $ceTaskUrl = "$ceTaskUrl$sep" + "organization=$organization"
 }
 
 # Basic auth for endpoints that need it (quality gate)
@@ -114,13 +115,16 @@ function Invoke-Json([string]$url, [bool]$withAuth = $true) {
   $headers = @{ Accept = 'application/json' }
   if ($withAuth) { $headers['Authorization'] = $authHeader }
 
-  for ($i=0; $i -lt 6; $i++) {
+  $delays = 1,2,4,8,16,32
+  for ($i=0; $i -lt $delays.Count; $i++) {
     try {
       return Invoke-RestMethod -Headers $headers -Uri $url -Method GET -TimeoutSec 30
     } catch {
-      $code = $_.Exception.Response.StatusCode.value__ 2>$null
-      if (($code -ge 500 -or -not $code) -and $i -lt 5) {
-        Start-Sleep -Seconds ([int][math]::Pow(2, $i))   # 1,2,4,8,16,32
+      $resp = $_.Exception.Response
+      $code = $null
+      if ($resp -and $resp.StatusCode) { $code = [int]$resp.StatusCode }
+      if (($code -ge 500 -or -not $code) -and $i -lt ($delays.Count - 1)) {
+        Start-Sleep -Seconds $delays[$i]
       } else {
         throw
       }
@@ -135,9 +139,7 @@ while ($true) {
   $ce = Invoke-Json $ceTaskUrl $false
   $state = $ce.task.status
   if ($state -eq 'SUCCESS') { break }
-  if ($state -in @('FAILED','CANCELED')) {
-    throw "SonarCloud background task ended with status: $state"
-  }
+  if ($state -in @('FAILED','CANCELED')) { throw "SonarCloud background task ended with status: $state" }
   Start-Sleep -Seconds 3
 }
 
@@ -160,6 +162,7 @@ if ($status -ne 'OK') {
     }
   }
 }
+
 
 
 
