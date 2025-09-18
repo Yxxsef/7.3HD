@@ -93,15 +93,15 @@ stage('Quality Gate (poll)') {
       powershell '''
 $ErrorActionPreference = "Stop"
 
-# Always run from the workspace
+# 1) run from the workspace so .scannerwork is found
 Set-Location $env:WORKSPACE
 
+# 2) read .scannerwork/report-task.txt safely with regex
 $rtPath = ".scannerwork\\report-task.txt"
 if (!(Test-Path $rtPath)) {
-  throw "report-task.txt not found at $rtPath. Make sure the scan ran on this same node/workspace."
+  throw "report-task.txt not found at $rtPath. Did the sonar-scanner run on this same node?"
 }
 
-# Parse key=value safely
 $raw = Get-Content $rtPath -Raw
 $ceTaskId = ([regex]::Match($raw, '(?m)^ceTaskId\\s*=\\s*(.+)$')).Groups[1].Value.Trim()
 $server   = ([regex]::Match($raw, '(?m)^serverUrl\\s*=\\s*(.+)$')).Groups[1].Value.Trim()
@@ -114,20 +114,27 @@ $headers = @{ Authorization = "Bearer $env:SONAR_TOKEN" }
 $projectKey   = "Yxxsef_7.3HD"
 $organization = "yxxsef"
 
-# 1) Poll CE task (NO organization param)
+# 3) poll CE task until it finishes (no organization param here)
 $deadline = (Get-Date).AddMinutes(5)
 do {
   $ce = Invoke-RestMethod -Headers $headers -Uri "$server/api/ce/task?id=$ceTaskId" -Method GET
-  $state = $ce.task.status  # PENDING | IN_PROGRESS | SUCCESS | FAILED | CANCELED
+  $state = $ce.task.status   # PENDING | IN_PROGRESS | SUCCESS | FAILED | CANCELED
   if ($state -in @('SUCCESS','FAILED','CANCELED')) { break }
   Start-Sleep -Seconds 3
 } while ((Get-Date) -lt $deadline)
 
 if ($state -ne 'SUCCESS') { throw "Sonar CE task status: $state" }
 
-# 2) Check Quality Gate (organization IS required)
-$qg = Invoke-RestMethod -Headers $headers -Uri "$server/api/qualitygates/project_status?projectKey=$projectKey&organization=$organization" -Method GET
-$status = $qg.projectStatus.status  # OK | ERROR | WARN
+# 4) fetch Quality Gate; retry if SonarCloud still says NONE
+$maxTries = 10
+$status = 'NONE'
+for ($i=0; $i -lt $maxTries; $i++) {
+  $qg = Invoke-RestMethod -Headers $headers -Uri "$server/api/qualitygates/project_status?projectKey=$projectKey&organization=$organization" -Method GET
+  $status = $qg.projectStatus.status  # OK | ERROR | WARN | NONE
+  if ($status -ne 'NONE') { break }
+  Start-Sleep -Seconds 3
+}
+
 Write-Host "Quality Gate: $status"
 if ($status -ne 'OK') { throw "Quality Gate failed: $status" }
 '''
