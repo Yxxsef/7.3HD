@@ -31,32 +31,26 @@ pipeline {
 stage('Push') {
   steps {
     withCredentials([usernamePassword(
-      credentialsId: 'dockerhub-creds',    // <— use this exact ID
+      credentialsId: 'dockerhub-creds',
       usernameVariable: 'DH_USER',
       passwordVariable: 'DH_PASS'
     )]) {
       powershell '''
         $ErrorActionPreference = "Stop"
+        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) { docker context use default } else { docker context use desktop-linux }
 
-        # Ensure a Docker context exists
-        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) {
-          docker context use default
-        } else {
-          docker context use desktop-linux
-        }
+        Write-Host "Logging into Docker Hub as $env:DH_USER"
+        $null = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Docker login failed" }
 
-        # Login to Docker Hub with token
-        $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
-
-        $image = "yousxf/7.3hd:${env:GIT_COMMIT}"
-        if ([string]::IsNullOrWhiteSpace($image)) { throw "Image tag is empty." }
-
-        docker push $image
+        $tag = "${env:GIT_COMMIT}"
+        docker push yousxf/7.3hd:$tag
         docker logout
       '''
     }
   }
 }
+
 
 
 
@@ -136,22 +130,18 @@ stage('Quality Gate') {
 stage('Deploy (staging)') {
   steps {
     withCredentials([usernamePassword(
-      credentialsId: 'dockerhub-creds',   // <— use the real ID
+      credentialsId: 'dockerhub-creds',
       usernameVariable: 'DH_USER',
       passwordVariable: 'DH_PASS'
     )]) {
       powershell '''
         $ErrorActionPreference = "Stop"
+        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) { docker context use default } else { docker context use desktop-linux }
 
-        # Use Docker Desktop context if present
-        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) {
-          docker context use default
-        } else {
-          docker context use desktop-linux
-        }
+        Write-Host "Logging into Docker Hub as $env:DH_USER"
+        $null = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Docker login failed" }
 
-        # Login, pull, and run
-        $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
         $tag = "${env:GIT_COMMIT}"
         docker pull yousxf/7.3hd:$tag
 
@@ -163,6 +153,7 @@ stage('Deploy (staging)') {
     }
   }
 }
+
 
 
 
