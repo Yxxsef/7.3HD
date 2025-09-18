@@ -1,9 +1,7 @@
-﻿version: "3.8"
 services:
   api:
-    build: .
-    image: yourdocker/7.3hd-api:staging
-    ports: ["9000:8000"]
-    environment:
-      - PYTHONUNBUFFERED=1
+    image: yousxf/7.3hd:${IMAGE_TAG:-latest} 
+    pull_policy: always
+    ports:
+      - "8000:8000"                            
     restart: unless-stopped
