@@ -155,17 +155,20 @@ stage('Deploy (staging)') {
 
 
 stage('Release') {
-  when { beforeInput true; expression { return true } }
-  input { message 'Promote to production?' }
   steps {
-    bat '''
-      docker context use desktop-linux
-      docker pull %DOCKERHUB_REPO%:staging
-      docker tag  %DOCKERHUB_REPO%:staging %DOCKERHUB_REPO%:prod
-      docker push %DOCKERHUB_REPO%:prod
+    powershell '''
+      Write-Host "=== DEBUG VARS ==="
+      Write-Host "IMAGE=$env:IMAGE"
+      Write-Host "DOCKERHUB_REPO=$env:DOCKERHUB_REPO"
+      Write-Host "==================="
+
+      docker pull $env:IMAGE
+      docker tag  $env:IMAGE "$env:DOCKERHUB_REPO:prod"
+      docker push "$env:DOCKERHUB_REPO:prod"
     '''
   }
 }
+
 
 
     stage('Monitoring (ping)') {
