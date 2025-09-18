@@ -5,13 +5,13 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
   environment {
-    DOCKERHUB_REPO   = 'yousxf/7.3hd'
+    DOCKERHUB_REPO = 'yousxf/7.3hd'
     DOCKER_CRED_ID = 'dockerhub-creds'
-    IMAGE            = "${DOCKERHUB_REPO}:${GIT_COMMIT}"
-    COMPOSE_FILE     = 'docker-compose.staging.yml'
-    SONAR_INSTANCE   = 'sonar'           // Jenkins Sonar server name
-    SONAR_PROJECT    = 'Yxxsef_7.3HD'
-    SONAR_ORG        = 'yxxsef'
+    IMAGE          = "${DOCKERHUB_REPO}:${GIT_COMMIT}"
+    COMPOSE_FILE   = 'docker-compose.staging.yml'
+    SONAR_INSTANCE = 'sonar'           // Jenkins Sonar server name
+    SONAR_PROJECT  = 'Yxxsef_7.3HD'
+    SONAR_ORG      = 'yxxsef'
   }
 
   stages {
@@ -29,34 +29,31 @@ pipeline {
       }
     }
 
-stage('Push') {
-  steps {
-    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-      bat '''
-        docker context use desktop-linux
-        echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
+    stage('Push') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          bat '''
+            docker context use desktop-linux
+            echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
 
-        REM ---- DEBUG: show the vars that build image refs ----
-        echo === DEBUG VARS ===
-        echo GIT_COMMIT=%GIT_COMMIT%
-        echo IMAGE=%IMAGE%
-        echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
-        echo DOCKER_CRED_ID=%DOCKER_CRED_ID%
-        echo ====================
-        docker images | findstr 7.3hd
+            REM ---- DEBUG: show the vars that build image refs ----
+            echo === DEBUG VARS ===
+            echo GIT_COMMIT=%GIT_COMMIT%
+            echo IMAGE=%IMAGE%
+            echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
+            echo DOCKER_CRED_ID=%DOCKER_CRED_ID%
+            echo ====================
+            docker images | findstr 7.3hd
 
-        REM ---- push/tag ----
-        docker push %IMAGE%
-        docker tag %IMAGE% %DOCKERHUB_REPO%:staging
-        docker push %DOCKERHUB_REPO%:staging
-        docker logout
-      '''
+            REM ---- push/tag ----
+            docker push %IMAGE%
+            docker tag %IMAGE% %DOCKERHUB_REPO%:staging
+            docker push %DOCKERHUB_REPO%:staging
+            docker logout
+          '''
+        }
+      }
     }
-  }
-}
-
-
-
 
     stage('Test') {
       steps {
@@ -78,40 +75,33 @@ stage('Push') {
       }
     }
 
-    
-stage('Code Quality (Sonar)') {
-  steps {
-    withSonarQubeEnv('sonar') {
-      script {
-        // Tool name must match what you created in Global Tool Configuration
-        def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
-            "-Dsonar.projectKey=Yxxsef_7.3HD " +
-            "-Dsonar.organization=yxxsef " +
-            "-Dsonar.sources=app " +
-            "-Dsonar.python.coverage.reportPaths=coverage.xml"
+    stage('Code Quality (Sonar)') {
+      steps {
+        withSonarQubeEnv('sonar') {
+          script {
+            def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+            bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
+                "-Dsonar.projectKey=Yxxsef_7.3HD " +
+                "-Dsonar.organization=yxxsef " +
+                "-Dsonar.sources=app " +
+                "-Dsonar.python.coverage.reportPaths=coverage.xml"
+          }
+        }
       }
     }
-  }
-}
 
-stage('Quality Gate') {
-  options { timeout(time: 1, unit: 'HOURS') }
-  steps {
-    script {
-      def qg = waitForQualityGate(abortPipeline: false)
-      echo "Quality Gate status: ${qg.status}"
-      if (qg.status == 'ERROR') {
-        error "Quality Gate failed: ${qg.status}"
+    stage('Quality Gate') {
+      options { timeout(time: 1, unit: 'HOURS') }
+      steps {
+        script {
+          def qg = waitForQualityGate(abortPipeline: false)
+          echo "Quality Gate status: ${qg.status}"
+          if (qg.status == 'ERROR') {
+            error "Quality Gate failed: ${qg.status}"
+          }
+        }
       }
     }
-  }
-}
-
-
-
-
-
 
     stage('Security') {
       steps {
@@ -126,59 +116,58 @@ stage('Quality Gate') {
         }
       }
       post {
-        always { archiveArtifacts artifacts: 'reports/*.json', fingerprint: true }
+        always  { archiveArtifacts artifacts: 'reports/*.json', fingerprint: true }
         failure { echo 'Security findings above threshold' }
       }
     }
 
+    stage('Deploy (staging)') {
+      when { branch 'main' }
+      steps {
+        withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          bat '''
+            docker context use desktop-linux
+            echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
 
-    
-stage('Deploy (staging)') {
-  when { branch 'main' }
-  steps {
-    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-      bat '''
-        docker context use desktop-linux
-        echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
+            echo === DEPLOY DEBUG ===
+            echo IMAGE=%IMAGE%
+            echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
+            echo DOCKER_CRED_ID=%DOCKER_CRED_ID%
+            echo =====================
 
-        echo === DEPLOY DEBUG ===
-        echo IMAGE=%IMAGE%
-        echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
-        echo DOCKER_CRED_ID=%DOCKER_CRED_ID%
-        echo =====================
-
-        docker pull %DOCKERHUB_REPO%:staging
-        REM your docker run/update here...
-        docker logout
-      '''
+            docker pull %DOCKERHUB_REPO%:staging
+            REM your docker run/update here...
+            docker logout
+          '''
+        }
+      }
     }
-  }
-}
 
+    stage('Release') {
+      when { branch 'main' }
+      steps {
+        withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          bat '''
+            docker context use desktop-linux
+            echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
 
+            echo === RELEASE DEBUG ===
+            echo IMAGE=%IMAGE%
+            echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
+            echo ======================
 
-
-
-stage('Release') {
-  steps {
-    powershell '''
-      Write-Host "=== DEBUG VARS ==="
-      Write-Host "IMAGE=$env:IMAGE"
-      Write-Host "DOCKERHUB_REPO=$env:DOCKERHUB_REPO"
-      Write-Host "==================="
-
-      docker pull $env:IMAGE
-      docker tag  $env:IMAGE "$env:DOCKERHUB_REPO:prod"
-      docker push "$env:DOCKERHUB_REPO:prod"
-    '''
-  }
-}
-
-
+            docker pull %IMAGE%
+            docker tag %IMAGE% %DOCKERHUB_REPO%:prod
+            docker push %DOCKERHUB_REPO%:prod
+            docker logout
+          '''
+        }
+      }
+    }
 
     stage('Monitoring (ping)') {
       steps {
-        powershell 'curl -fsS http://localhost:8000/metrics > metrics.txt'
+        bat 'curl -fsS http://localhost:8000/metrics > metrics.txt'
         archiveArtifacts artifacts: 'metrics.txt', fingerprint: true
       }
     }
