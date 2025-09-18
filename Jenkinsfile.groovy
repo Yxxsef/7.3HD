@@ -28,24 +28,33 @@ pipeline {
       }
     }
 
-    stage('Push') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          powershell '''
-            $ErrorActionPreference="Stop"
-            $env:DOCKER_CONFIG = Join-Path $PWD ".docker"
-            New-Item -ItemType Directory -Force -Path $env:DOCKER_CONFIG | Out-Null
-            '{"auths":{}}' | Out-File -Encoding ascii -FilePath (Join-Path $env:DOCKER_CONFIG "config.json")
-            docker context use desktop-linux | Out-Null
-            $env:DH_PASS | docker login --username $env:DH_USER --password-stdin docker.io
-            docker tag "$env:IMAGE" "$env:DOCKERHUB_REPO:latest"
-            docker push "$env:IMAGE"
-            docker push "$env:DOCKERHUB_REPO:latest"
-            docker logout docker.io
-          '''
-        }
+stage('Push') {
+  withCredentials([usernamePassword(credentialsId: 'dockerhub',
+                                    usernameVariable: 'DH_USER',
+                                    passwordVariable: 'DH_PASS')]) {
+    powershell '''
+      $ErrorActionPreference = "Stop"
+
+      # If the special Docker Desktop context is missing, fall back to default
+      if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) {
+        docker context use default
+      } else {
+        docker context use desktop-linux
       }
-    }
+
+      # Login with token
+      $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
+
+      $image="yousxf/7.3hd:$env:GIT_COMMIT"
+      if ([string]::IsNullOrWhiteSpace($image)) { throw "Image tag is empty." }
+
+      docker push $image
+
+      docker logout
+    '''
+  }
+}
+
 
     stage('Test') {
       steps {
