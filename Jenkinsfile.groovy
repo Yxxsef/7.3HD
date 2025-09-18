@@ -31,35 +31,20 @@ pipeline {
 
 stage('Push') {
   steps {
-    withCredentials([usernamePassword(credentialsId: 'dockerhub-yousxf',
+    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID,
                                       usernameVariable: 'DH_USER',
                                       passwordVariable: 'DH_PASS')]) {
       bat '''
         docker context use desktop-linux
-        echo IMAGE=%IMAGE%
-        echo REPO=%DOCKERHUB_REPO%
-        if "%IMAGE%"=="" exit /b 2
-        if "%DOCKERHUB_REPO%"=="" exit /b 3
-
         echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
         docker push %IMAGE%
-        docker tag %IMAGE% %DOCKERHUB_REPO%:%BUILD_NUMBER%
         docker tag %IMAGE% %DOCKERHUB_REPO%:staging
-        docker push %DOCKERHUB_REPO%:%BUILD_NUMBER%
         docker push %DOCKERHUB_REPO%:staging
         docker logout
       '''
     }
   }
 }
-
-
-
-
-
-
-
-
 
 
 
