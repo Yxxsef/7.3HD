@@ -68,31 +68,23 @@ pipeline {
     }
 
     
- stage('Code Quality (Sonar)') {
-  steps {
-    withSonarQubeEnv('sonar') {
-      bat "\"%SONAR_SCANNER_HOME%\\bin\\sonar-scanner.bat\" " +
-          "-Dsonar.projectKey=Yxxsef_7.3HD " +
-          "-Dsonar.organization=yxxsef " +
-          "-Dsonar.sources=app " +
-          "-Dsonar.python.coverage.reportPaths=coverage.xml"
-    }
+stage('Code Quality (Sonar)') {
+  withSonarQubeEnv('sonar') {
+    def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+    bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
+        "-Dsonar.projectKey=Yxxsef_7.3HD " +
+        "-Dsonar.organization=yxxsef " +
+        "-Dsonar.sources=app " +
+        "-Dsonar.python.coverage.reportPaths=coverage.xml"
+  }
+}
+stage('Quality Gate') {
+  timeout(time: 1, unit: 'HOURS') {
+    def qg = waitForQualityGate()
+    if (qg.status != 'OK') { error "Quality Gate failed: ${qg.status}" }
   }
 }
 
-stage('Quality Gate') {
-  steps {
-    timeout(time: 5, unit: 'MINUTES') {
-      script {
-        def qg = waitForQualityGate()  // blocks until the analysis is ready
-        echo "Quality Gate: ${qg.status}"
-        if (qg.status != 'OK') {
-          error("Pipeline aborted due to quality gate: ${qg.status}")
-        }
-      }
-    }
-  }
-}
 
 
 
