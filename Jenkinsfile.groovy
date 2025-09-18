@@ -34,20 +34,24 @@ stage('Push') {
     withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID,
                                       usernameVariable: 'DH_USER',
                                       passwordVariable: 'DH_PASS')]) {
-      bat '''
-        @echo off
-        docker context use desktop-linux
-        echo Logging into Docker Hub as %DH_USER%
-        rem send ASCII without newline:
-        echo|set /p=%DH_PASS%| docker login -u %DH_USER% --password-stdin
-        if errorlevel 1 exit /b 1
+      powershell '''
+        $ErrorActionPreference = "Stop"
+        docker context use desktop-linux | Out-Null
 
-        docker push %DOCKER_REPO%:%GIT_COMMIT%
-        docker logout >nul
+        # Write the secret in ASCII w/out newline, then feed it to docker
+        $passFile = "pass.txt"
+        $env:DH_PASS | Out-File -FilePath $passFile -Encoding ascii -NoNewline
+        docker login -u $env:DH_USER --password-stdin < $passFile
+        if ($LASTEXITCODE -ne 0) { throw "docker login failed" }
+        Remove-Item $passFile -Force
+
+        docker push $env:DOCKER_REPO:$env:GIT_COMMIT
+        docker logout | Out-Null
       '''
     }
   }
 }
+
 
 
 
