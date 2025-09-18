@@ -140,21 +140,21 @@ stage('Quality Gate') {
     
 stage('Deploy (staging)') {
   steps {
-    withCredentials([usernamePassword(
-        credentialsId: 'dockerhub-yousxf',
-        usernameVariable: 'DH_USER',
-        passwordVariable: 'DH_PASS'
-    )]) {
+    withCredentials([usernamePassword(credentialsId: 'dockerhub-yousxf',
+                                      usernameVariable: 'DH_USER',
+                                      passwordVariable: 'DH_PASS')]) {
       bat '''
         docker context use desktop-linux
         echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
-        docker compose -f docker-compose.staging.yml pull
-        docker compose -f docker-compose.staging.yml up -d
+        docker pull %DOCKERHUB_REPO%:staging
+        docker rm -f 7_3hd || echo no container
+        docker run -d --name 7_3hd -p 9000:8000 %DOCKERHUB_REPO%:staging
         docker logout
       '''
     }
   }
 }
+
 
 
 
