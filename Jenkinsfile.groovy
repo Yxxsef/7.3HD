@@ -67,77 +67,29 @@ pipeline {
       }
     }
 
-    stage('Code Quality (Sonar)') {
-      steps {
-        withSonarQubeEnv("${SONAR_INSTANCE}") {
-          script {
-            def scannerHome = tool 'sonar-scanner'
-            bat """
-              "${scannerHome}\\bin\\sonar-scanner.bat" ^
-                -Dsonar.projectKey=${SONAR_PROJECT} ^
-                -Dsonar.organization=${SONAR_ORG} ^
-                -Dsonar.sources=app ^
-                -Dsonar.python.coverage.reportPaths=coverage.xml
-            """
-          }
+    
+ stage('Code Quality (Sonar)') {
+  steps {
+    withSonarQubeEnv('sonar') {
+      bat "\"%SONAR_SCANNER_HOME%\\bin\\sonar-scanner.bat\" " +
+          "-Dsonar.projectKey=Yxxsef_7.3HD " +
+          "-Dsonar.organization=yxxsef " +
+          "-Dsonar.sources=app " +
+          "-Dsonar.python.coverage.reportPaths=coverage.xml"
+    }
+  }
+}
+
+stage('Quality Gate') {
+  steps {
+    timeout(time: 5, unit: 'MINUTES') {
+      script {
+        def qg = waitForQualityGate()  // blocks until the analysis is ready
+        echo "Quality Gate: ${qg.status}"
+        if (qg.status != 'OK') {
+          error("Pipeline aborted due to quality gate: ${qg.status}")
         }
       }
-    }
-
-
-
-    
-stage('Quality Gate (poll)') {
-  steps {
-    withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
-      powershell '''
-$ErrorActionPreference = "Stop"
-
-# 1) run from the workspace so .scannerwork is found
-Set-Location $env:WORKSPACE
-
-# 2) read .scannerwork/report-task.txt safely with regex
-$rtPath = ".scannerwork\\report-task.txt"
-if (!(Test-Path $rtPath)) {
-  throw "report-task.txt not found at $rtPath. Did the sonar-scanner run on this same node?"
-}
-
-$raw = Get-Content $rtPath -Raw
-$ceTaskId = ([regex]::Match($raw, '(?m)^ceTaskId\\s*=\\s*(.+)$')).Groups[1].Value.Trim()
-$server   = ([regex]::Match($raw, '(?m)^serverUrl\\s*=\\s*(.+)$')).Groups[1].Value.Trim()
-
-if (-not $ceTaskId -or -not $server) {
-  throw "Could not read ceTaskId/serverUrl from $rtPath"
-}
-
-$headers = @{ Authorization = "Bearer $env:SONAR_TOKEN" }
-$projectKey   = "Yxxsef_7.3HD"
-$organization = "yxxsef"
-
-# 3) poll CE task until it finishes (no organization param here)
-$deadline = (Get-Date).AddMinutes(5)
-do {
-  $ce = Invoke-RestMethod -Headers $headers -Uri "$server/api/ce/task?id=$ceTaskId" -Method GET
-  $state = $ce.task.status   # PENDING | IN_PROGRESS | SUCCESS | FAILED | CANCELED
-  if ($state -in @('SUCCESS','FAILED','CANCELED')) { break }
-  Start-Sleep -Seconds 3
-} while ((Get-Date) -lt $deadline)
-
-if ($state -ne 'SUCCESS') { throw "Sonar CE task status: $state" }
-
-# 4) fetch Quality Gate; retry if SonarCloud still says NONE
-$maxTries = 10
-$status = 'NONE'
-for ($i=0; $i -lt $maxTries; $i++) {
-  $qg = Invoke-RestMethod -Headers $headers -Uri "$server/api/qualitygates/project_status?projectKey=$projectKey&organization=$organization" -Method GET
-  $status = $qg.projectStatus.status  # OK | ERROR | WARN | NONE
-  if ($status -ne 'NONE') { break }
-  Start-Sleep -Seconds 3
-}
-
-Write-Host "Quality Gate: $status"
-if ($status -ne 'OK') { throw "Quality Gate failed: $status" }
-'''
     }
   }
 }
