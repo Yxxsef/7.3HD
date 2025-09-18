@@ -84,13 +84,38 @@ pipeline {
       }
     }
 
-    stage('Quality Gate') {
-      steps {
-        timeout(time: 5, unit: 'MINUTES') {
-          waitForQualityGate abortPipeline: true
+stage('Quality Gate (poll)') {
+  steps {
+    withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+      powershell '''
+        $ErrorActionPreference="Stop"
+        $rt = Get-Content .scannerwork\\report-task.txt | ConvertFrom-StringData
+        $taskId = $rt["ceTaskId"]
+
+        $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_TOKEN:"))
+        function CallApi($url) {
+          (Invoke-RestMethod -Headers @{Authorization="Basic $auth"} -Uri $url -Method GET)
         }
-      }
+
+        # Wait for CE task to finish
+        do {
+          Start-Sleep -Seconds 2
+          $ce = CallApi("https://sonarcloud.io/api/ce/task?id=$taskId")
+          $state = $ce.task.status
+        } while ($state -notin @("SUCCESS","FAILED","CANCELED"))
+
+        if ($state -ne "SUCCESS") { throw "Sonar CE task ended with $state" }
+
+        # Get Quality Gate status for this analysis
+        $analysisId = $ce.task.analysisId
+        $qg = CallApi("https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysisId")
+        $status = $qg.projectStatus.status
+        Write-Host "Quality Gate status: $status"
+        if ($status -ne "OK") { throw "Quality Gate failed: $status" }
+      '''
     }
+  }
+}
 
     stage('Security') {
       steps {
