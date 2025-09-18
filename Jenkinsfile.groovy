@@ -88,27 +88,52 @@ stage('Quality Gate (poll)') {
   steps {
     withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
       powershell '''
-        $ErrorActionPreference="Stop"
-        $rt = Get-Content .scannerwork\\report-task.txt | ConvertFrom-StringData
-        $taskId = $rt["ceTaskId"]
+        $ErrorActionPreference = "Stop"
 
-        $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_TOKEN:"))
-        function CallApi($url) {
-          (Invoke-RestMethod -Headers @{Authorization="Basic $auth"} -Uri $url -Method GET)
+        # Parse report-task.txt (key=value lines)
+        $kv = @{}
+        Get-Content ".scannerwork\\report-task.txt" | ForEach-Object {
+          if ($_ -match "^\s*([^=]+)=(.*)$") { $kv[$matches[1]] = $matches[2] }
         }
 
-        # Wait for CE task to finish
+        $ceTaskUrl   = $kv["ceTaskUrl"]   # already includes id & org for SonarCloud
+        $projectKey  = $kv["projectKey"]
+        $organization= $kv["organization"]
+
+        if (-not $ceTaskUrl) { throw "Could not read ceTaskUrl from .scannerwork\\report-task.txt" }
+
+        $auth = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_TOKEN:"))
+
+        function CallApi($url) {
+          # Retry transient 5xx
+          for ($i=0; $i -lt 5; $i++) {
+            try {
+              return Invoke-RestMethod -Headers @{ Authorization = $auth } -Uri $url -Method GET
+            } catch {
+              if ($_.Exception.Response.StatusCode.value__ -ge 500 -and $i -lt 4) {
+                Start-Sleep -Seconds (2 * ($i + 1))
+              } else {
+                throw
+              }
+            }
+          }
+        }
+
+        Write-Host "Waiting for CE task to finish: $ceTaskUrl"
         do {
           Start-Sleep -Seconds 2
-          $ce = CallApi("https://sonarcloud.io/api/ce/task?id=$taskId")
+          $ce = CallApi $ceTaskUrl
           $state = $ce.task.status
         } while ($state -notin @("SUCCESS","FAILED","CANCELED"))
 
         if ($state -ne "SUCCESS") { throw "Sonar CE task ended with $state" }
 
-        # Get Quality Gate status for this analysis
         $analysisId = $ce.task.analysisId
-        $qg = CallApi("https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysisId")
+        if (-not $analysisId) { throw "No analysisId returned from CE task." }
+
+        # Quality Gate – include organization for SonarCloud
+        $qgUrl = "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysisId&organization=$organization"
+        $qg = CallApi $qgUrl
         $status = $qg.projectStatus.status
         Write-Host "Quality Gate status: $status"
         if ($status -ne "OK") { throw "Quality Gate failed: $status" }
@@ -116,6 +141,7 @@ stage('Quality Gate (poll)') {
     }
   }
 }
+
 
     stage('Security') {
       steps {
