@@ -129,24 +129,37 @@ stage('Quality Gate') {
       }
     }
 
-    stage('Deploy (staging)') {
-      when { branch 'main' }
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          powershell '''
-            $ErrorActionPreference="Stop"
-            docker context use desktop-linux | Out-Null
-            $env:IMAGE_TAG=$env:GIT_COMMIT
-            $env:DH_PASS | docker login --username $env:DH_USER --password-stdin docker.io
-            docker compose -f $env:COMPOSE_FILE pull
-            docker compose -f $env:COMPOSE_FILE up -d --remove-orphans
-            curl -fsS http://localhost:8000/health > $env:WORKSPACE\\health.txt
-            docker logout docker.io
-          '''
-        }
-        archiveArtifacts artifacts: 'health.txt', fingerprint: true
-      }
-    }
+stage('Deploy (staging)') {
+  withCredentials([usernamePassword(credentialsId: 'dockerhub',
+                                    usernameVariable: 'DH_USER',
+                                    passwordVariable: 'DH_PASS')]) {
+    powershell '''
+      $ErrorActionPreference = "Stop"
+      docker context use default
+
+      # login (some compose installs still pull from private registries)
+      $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
+
+      # pass the tag from the build
+      $env:IMAGE_TAG = $env:GIT_COMMIT
+      $compose = "$env:WORKSPACE\\docker-compose.staging.yml"
+
+      # ensure a clean slate (frees any occupied ports/containers)
+      docker compose -f $compose -p 73hd_main down --remove-orphans
+
+      # start
+      docker compose -f $compose -p 73hd_main pull
+      docker compose -f $compose -p 73hd_main up -d
+
+      # health check (use real curl, not the PS alias)
+      curl.exe -fsS http://localhost:8000/health > $env:WORKSPACE\\health.txt
+
+      docker logout
+    '''
+  }
+  archiveArtifacts artifacts: 'health.txt', allowEmptyArchive: true
+}
+
 
     stage('Release') {
       when { branch 'main' }
