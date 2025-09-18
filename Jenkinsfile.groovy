@@ -31,12 +31,21 @@ pipeline {
 
 stage('Push') {
   steps {
-    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID,
-                                      usernameVariable: 'DH_USER',
-                                      passwordVariable: 'DH_PASS')]) {
+    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
       bat '''
         docker context use desktop-linux
         echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
+
+        REM ---- DEBUG: show the vars that build image refs ----
+        echo === DEBUG VARS ===
+        echo GIT_COMMIT=%GIT_COMMIT%
+        echo IMAGE=%IMAGE%
+        echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
+        echo DOCKER_CRED_ID=%DOCKER_CRED_ID%
+        echo ====================
+        docker images | findstr 7.3hd
+
+        REM ---- push/tag ----
         docker push %IMAGE%
         docker tag %IMAGE% %DOCKERHUB_REPO%:staging
         docker push %DOCKERHUB_REPO%:staging
@@ -45,6 +54,7 @@ stage('Push') {
     }
   }
 }
+
 
 
 
