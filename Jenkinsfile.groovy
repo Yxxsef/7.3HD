@@ -69,19 +69,27 @@ pipeline {
 
     
 stage('Code Quality (Sonar)') {
-  withSonarQubeEnv('sonar') {
-    def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-    bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
-        "-Dsonar.projectKey=Yxxsef_7.3HD " +
-        "-Dsonar.organization=yxxsef " +
-        "-Dsonar.sources=app " +
-        "-Dsonar.python.coverage.reportPaths=coverage.xml"
+  steps {
+    withSonarQubeEnv('sonar') {
+      script {
+        // Tool name must match what you created in Global Tool Configuration
+        def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
+            "-Dsonar.projectKey=Yxxsef_7.3HD " +
+            "-Dsonar.organization=yxxsef " +
+            "-Dsonar.sources=app " +
+            "-Dsonar.python.coverage.reportPaths=coverage.xml"
+      }
+    }
   }
 }
+
 stage('Quality Gate') {
-  timeout(time: 1, unit: 'HOURS') {
-    def qg = waitForQualityGate()
-    if (qg.status != 'OK') { error "Quality Gate failed: ${qg.status}" }
+  steps {
+    timeout(time: 1, unit: 'HOURS') {
+      // aborts pipeline automatically if gate != OK
+      waitForQualityGate abortPipeline: true
+    }
   }
 }
 
