@@ -30,23 +30,25 @@ pipeline {
 
 stage('Push') {
   steps {
-    withCredentials([usernamePassword(credentialsId: 'dockerhub',
-                                      usernameVariable: 'DH_USER',
-                                      passwordVariable: 'DH_PASS')]) {
+    withCredentials([usernamePassword(
+      credentialsId: 'dockerhub-creds',    // <— use this exact ID
+      usernameVariable: 'DH_USER',
+      passwordVariable: 'DH_PASS'
+    )]) {
       powershell '''
         $ErrorActionPreference = "Stop"
 
-        # Prefer Docker Desktop context if present; otherwise use default
+        # Ensure a Docker context exists
         if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) {
           docker context use default
         } else {
           docker context use desktop-linux
         }
 
-        # Login with Docker access token
+        # Login to Docker Hub with token
         $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
 
-        $image = "yousxf/7.3hd:$env:GIT_COMMIT"
+        $image = "yousxf/7.3hd:${env:GIT_COMMIT}"
         if ([string]::IsNullOrWhiteSpace($image)) { throw "Image tag is empty." }
 
         docker push $image
@@ -55,6 +57,7 @@ stage('Push') {
     }
   }
 }
+
 
 
     stage('Test') {
