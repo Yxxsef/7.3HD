@@ -6,6 +6,7 @@ pipeline {
   }
   environment {
     DOCKERHUB_REPO   = 'yousxf/7.3hd'
+    DOCKER_CRED_ID = 'dockerhub-creds'
     IMAGE            = "${DOCKERHUB_REPO}:${GIT_COMMIT}"
     COMPOSE_FILE     = 'docker-compose.staging.yml'
     SONAR_INSTANCE   = 'sonar'           // Jenkins Sonar server name
@@ -30,25 +31,17 @@ pipeline {
 
 stage('Push') {
   steps {
-    withCredentials([usernamePassword(
-      credentialsId: 'dockerhub-creds',
-      usernameVariable: 'DH_USER',
-      passwordVariable: 'DH_PASS'
-    )]) {
+    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID,
+                                      usernameVariable: 'DH_USER',
+                                      passwordVariable: 'DH_PASS')]) {
       powershell '''
         $ErrorActionPreference = "Stop"
-
-        # Use the Linux engine that built the image
-        if (docker context ls | Select-String -Quiet 'desktop-linux') {
-          docker context use desktop-linux | Out-Null
-        }
-
+        docker context use desktop-linux
         Write-Host "Logging into Docker Hub as $env:DH_USER"
-        # PowerShell pipeline (no CMD, no special-char mangling)
-        $loginOut = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "docker login failed: $loginOut" }
+        $null = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "docker login failed" }
 
-        docker push yousxf/7.3hd:$env:GIT_COMMIT
+        docker push $env:DOCKER_REPO:$env:GIT_COMMIT
         docker logout | Out-Null
       '''
     }
@@ -138,19 +131,19 @@ stage('Quality Gate') {
     
 stage('Deploy (staging)') {
   steps {
-    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
+    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID,
                                       usernameVariable: 'DH_USER',
                                       passwordVariable: 'DH_PASS')]) {
       powershell '''
         $ErrorActionPreference = "Stop"
-        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) { docker context use default } else { docker context use desktop-linux }
-
-        cmd /c "echo|set /p=%DH_PASS%" | docker login -u $env:DH_USER --password-stdin
+        docker context use desktop-linux
+        $null = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "docker login failed" }
 
         docker rm -f 7_3hd 2>$null | Out-Null
-        docker pull yousxf/7.3hd:$env:GIT_COMMIT
-        docker run -d --name 7_3hd -p 8000:8000 yousxf/7.3hd:$env:GIT_COMMIT
-        docker logout
+        docker pull $env:DOCKER_REPO:$env:GIT_COMMIT
+        docker run -d --name 7_3hd -p 8080:80 $env:DOCKER_REPO:$env:GIT_COMMIT
+        docker logout | Out-Null
       '''
     }
   }
