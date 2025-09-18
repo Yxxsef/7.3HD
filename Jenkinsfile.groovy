@@ -31,14 +31,16 @@ pipeline {
 
 stage('Push') {
   steps {
-    withCredentials([usernamePassword(
-        credentialsId: 'dockerhub-yousxf',   // Jenkins cred: username=yousxf, password=PAT
-        usernameVariable: 'DH_USER',
-        passwordVariable: 'DH_PASS'
-    )]) {
+    withCredentials([usernamePassword(credentialsId: 'dockerhub-yousxf',
+                                      usernameVariable: 'DH_USER',
+                                      passwordVariable: 'DH_PASS')]) {
       bat '''
         docker context use desktop-linux
-        echo Logging into Docker Hub as %DH_USER%
+        echo IMAGE=%IMAGE%
+        echo REPO=%DOCKERHUB_REPO%
+        if "%IMAGE%"=="" exit /b 2
+        if "%DOCKERHUB_REPO%"=="" exit /b 3
+
         echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
         docker push %IMAGE%
         docker tag %IMAGE% %DOCKERHUB_REPO%:%BUILD_NUMBER%
@@ -50,6 +52,7 @@ stage('Push') {
     }
   }
 }
+
 
 
 
