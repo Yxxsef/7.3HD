@@ -131,34 +131,34 @@ stage('Quality Gate') {
     }
 
 stage('Deploy (staging)') {
-  withCredentials([usernamePassword(credentialsId: 'dockerhub',
-                                    usernameVariable: 'DH_USER',
-                                    passwordVariable: 'DH_PASS')]) {
-    powershell '''
-      $ErrorActionPreference = "Stop"
-      docker context use default
+  steps {
+    withCredentials([usernamePassword(credentialsId: 'dockerhub',
+                                      usernameVariable: 'DH_USER',
+                                      passwordVariable: 'DH_PASS')]) {
+      powershell '''
+        $ErrorActionPreference = "Stop"
+        docker context use default
 
-      # login (some compose installs still pull from private registries)
-      $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
+        $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
+        $env:IMAGE_TAG = $env:GIT_COMMIT
+        $compose = "$env:WORKSPACE\\docker-compose.staging.yml"
 
-      # pass the tag from the build
-      $env:IMAGE_TAG = $env:GIT_COMMIT
-      $compose = "$env:WORKSPACE\\docker-compose.staging.yml"
+        docker compose -f $compose -p 73hd_main down --remove-orphans
+        docker compose -f $compose -p 73hd_main pull
+        docker compose -f $compose -p 73hd_main up -d
 
-      # ensure a clean slate (frees any occupied ports/containers)
-      docker compose -f $compose -p 73hd_main down --remove-orphans
+        # Use real curl on Windows to support -fsS
+        curl.exe -fsS http://localhost:8000/health > $env:WORKSPACE\\health.txt
 
-      # start
-      docker compose -f $compose -p 73hd_main pull
-      docker compose -f $compose -p 73hd_main up -d
-
-      # health check (use real curl, not the PS alias)
-      curl.exe -fsS http://localhost:8000/health > $env:WORKSPACE\\health.txt
-
-      docker logout
-    '''
+        docker logout
+      '''
+    }
   }
-  archiveArtifacts artifacts: 'health.txt', allowEmptyArchive: true
+  post {
+    always {
+      archiveArtifacts artifacts: 'health.txt', allowEmptyArchive: true
+    }
+  }
 }
 
 
