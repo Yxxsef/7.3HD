@@ -30,19 +30,26 @@ pipeline {
 
 stage('Push') {
   steps {
-    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
-                                      usernameVariable: 'DH_USER',
-                                      passwordVariable: 'DH_PASS')]) {
+    withCredentials([usernamePassword(
+      credentialsId: 'dockerhub-creds',
+      usernameVariable: 'DH_USER',
+      passwordVariable: 'DH_PASS'
+    )]) {
       powershell '''
         $ErrorActionPreference = "Stop"
-        # Ensure Linux engine
-        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) { docker context use default } else { docker context use desktop-linux }
+
+        # Use the Linux engine that built the image
+        if (docker context ls | Select-String -Quiet 'desktop-linux') {
+          docker context use desktop-linux | Out-Null
+        }
 
         Write-Host "Logging into Docker Hub as $env:DH_USER"
-        cmd /c "echo|set /p=%DH_PASS%" | docker login -u $env:DH_USER --password-stdin
+        # PowerShell pipeline (no CMD, no special-char mangling)
+        $loginOut = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "docker login failed: $loginOut" }
 
         docker push yousxf/7.3hd:$env:GIT_COMMIT
-        docker logout
+        docker logout | Out-Null
       '''
     }
   }
