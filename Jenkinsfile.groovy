@@ -87,13 +87,54 @@ pipeline {
 
 
     
-stage('Quality Gate') {
+stage('Quality Gate (poll)') {
   steps {
-    timeout(time: 5, unit: 'MINUTES') {
-      waitForQualityGate()  // aborts the build if the Quality Gate fails
+    withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+      powershell '''
+$ErrorActionPreference = "Stop"
+
+# Always run from the workspace
+Set-Location $env:WORKSPACE
+
+$rtPath = ".scannerwork\\report-task.txt"
+if (!(Test-Path $rtPath)) {
+  throw "report-task.txt not found at $rtPath. Make sure the scan ran on this same node/workspace."
+}
+
+# Parse key=value safely
+$raw = Get-Content $rtPath -Raw
+$ceTaskId = ([regex]::Match($raw, '(?m)^ceTaskId\\s*=\\s*(.+)$')).Groups[1].Value.Trim()
+$server   = ([regex]::Match($raw, '(?m)^serverUrl\\s*=\\s*(.+)$')).Groups[1].Value.Trim()
+
+if (-not $ceTaskId -or -not $server) {
+  throw "Could not read ceTaskId/serverUrl from $rtPath"
+}
+
+$headers = @{ Authorization = "Bearer $env:SONAR_TOKEN" }
+$projectKey   = "Yxxsef_7.3HD"
+$organization = "yxxsef"
+
+# 1) Poll CE task (NO organization param)
+$deadline = (Get-Date).AddMinutes(5)
+do {
+  $ce = Invoke-RestMethod -Headers $headers -Uri "$server/api/ce/task?id=$ceTaskId" -Method GET
+  $state = $ce.task.status  # PENDING | IN_PROGRESS | SUCCESS | FAILED | CANCELED
+  if ($state -in @('SUCCESS','FAILED','CANCELED')) { break }
+  Start-Sleep -Seconds 3
+} while ((Get-Date) -lt $deadline)
+
+if ($state -ne 'SUCCESS') { throw "Sonar CE task status: $state" }
+
+# 2) Check Quality Gate (organization IS required)
+$qg = Invoke-RestMethod -Headers $headers -Uri "$server/api/qualitygates/project_status?projectKey=$projectKey&organization=$organization" -Method GET
+$status = $qg.projectStatus.status  # OK | ERROR | WARN
+Write-Host "Quality Gate: $status"
+if ($status -ne 'OK') { throw "Quality Gate failed: $status" }
+'''
     }
   }
 }
+
 
 
 
