@@ -135,34 +135,35 @@ stage('Quality Gate') {
 
 stage('Deploy (staging)') {
   steps {
-    withCredentials([usernamePassword(credentialsId: 'dockerhub',
-                                      usernameVariable: 'DH_USER',
-                                      passwordVariable: 'DH_PASS')]) {
+    withCredentials([usernamePassword(
+      credentialsId: 'dockerhub-creds',   // <— use the real ID
+      usernameVariable: 'DH_USER',
+      passwordVariable: 'DH_PASS'
+    )]) {
       powershell '''
         $ErrorActionPreference = "Stop"
-        docker context use default
 
+        # Use Docker Desktop context if present
+        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) {
+          docker context use default
+        } else {
+          docker context use desktop-linux
+        }
+
+        # Login, pull, and run
         $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
-        $env:IMAGE_TAG = $env:GIT_COMMIT
-        $compose = "$env:WORKSPACE\\docker-compose.staging.yml"
+        $tag = "${env:GIT_COMMIT}"
+        docker pull yousxf/7.3hd:$tag
 
-        docker compose -f $compose -p 73hd_main down --remove-orphans
-        docker compose -f $compose -p 73hd_main pull
-        docker compose -f $compose -p 73hd_main up -d
-
-        # Use real curl on Windows to support -fsS
-        curl.exe -fsS http://localhost:8000/health > $env:WORKSPACE\\health.txt
+        docker rm -f 7_3hd 2>$null | Out-Null
+        docker run -d --name 7_3hd -p 8000:8000 yousxf/7.3hd:$tag
 
         docker logout
       '''
     }
   }
-  post {
-    always {
-      archiveArtifacts artifacts: 'health.txt', allowEmptyArchive: true
-    }
-  }
 }
+
 
 
     stage('Release') {
