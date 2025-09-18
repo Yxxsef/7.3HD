@@ -30,26 +30,15 @@ pipeline {
 
 stage('Push') {
   steps {
-    withCredentials([usernamePassword(
-      credentialsId: 'dockerhub-creds',
-      usernameVariable: 'DH_USER',
-      passwordVariable: 'DH_PASS'
-    )]) {
-      powershell '''
-        $ErrorActionPreference = "Stop"
-        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) { docker context use default } else { docker context use desktop-linux }
-
-        Write-Host "Logging into Docker Hub as $env:DH_USER"
-        $null = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "Docker login failed" }
-
-        $tag = "${env:GIT_COMMIT}"
-        docker push yousxf/7.3hd:$tag
-        docker logout
-      '''
+    script {
+      def image = docker.build("yousxf/7.3hd:${env.GIT_COMMIT}")
+      docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-creds') {
+        image.push()
+      }
     }
   }
 }
+
 
 
 
