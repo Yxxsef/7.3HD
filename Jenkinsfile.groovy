@@ -29,29 +29,30 @@ pipeline {
     }
 
 stage('Push') {
-  withCredentials([usernamePassword(credentialsId: 'dockerhub',
-                                    usernameVariable: 'DH_USER',
-                                    passwordVariable: 'DH_PASS')]) {
-    powershell '''
-      $ErrorActionPreference = "Stop"
+  steps {
+    withCredentials([usernamePassword(credentialsId: 'dockerhub',
+                                      usernameVariable: 'DH_USER',
+                                      passwordVariable: 'DH_PASS')]) {
+      powershell '''
+        $ErrorActionPreference = "Stop"
 
-      # If the special Docker Desktop context is missing, fall back to default
-      if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) {
-        docker context use default
-      } else {
-        docker context use desktop-linux
-      }
+        # Prefer Docker Desktop context if present; otherwise use default
+        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) {
+          docker context use default
+        } else {
+          docker context use desktop-linux
+        }
 
-      # Login with token
-      $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
+        # Login with Docker access token
+        $env:DH_PASS | docker login -u $env:DH_USER --password-stdin
 
-      $image="yousxf/7.3hd:$env:GIT_COMMIT"
-      if ([string]::IsNullOrWhiteSpace($image)) { throw "Image tag is empty." }
+        $image = "yousxf/7.3hd:$env:GIT_COMMIT"
+        if ([string]::IsNullOrWhiteSpace($image)) { throw "Image tag is empty." }
 
-      docker push $image
-
-      docker logout
-    '''
+        docker push $image
+        docker logout
+      '''
+    }
   }
 }
 
