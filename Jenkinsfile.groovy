@@ -88,12 +88,11 @@ stage('Code Quality (Sonar)') {
 stage('Code Quality (Sonar)') {
   steps {
     withSonarQubeEnv('sonarqube-local') {
-      bat '''"%SONAR_SCANNER_HOME%\\bin\\sonar-scanner.bat" ^
-        -Dsonar.projectKey=7.3HD ^
-        -Dsonar.projectVersion=%GIT_COMMIT%'''
+      bat '"%SONAR_SCANNER_HOME%\\bin\\sonar-scanner.bat" -Dsonar.projectKey=7.3HD -Dsonar.projectVersion=%GIT_COMMIT%'
     }
   }
 }
+
 
 
 
