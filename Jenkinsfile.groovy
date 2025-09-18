@@ -134,22 +134,27 @@ stage('Quality Gate') {
 
     
 stage('Deploy (staging)') {
+  when { branch 'main' }
   steps {
     withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
       bat '''
         docker context use desktop-linux
         echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
 
-        echo === DEBUG VARS ===
+        echo === DEPLOY DEBUG ===
         echo IMAGE=%IMAGE%
         echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
-        echo ====================
+        echo DOCKER_CRED_ID=%DOCKER_CRED_ID%
+        echo =====================
 
-        REM your deploy commands here...
+        docker pull %DOCKERHUB_REPO%:staging
+        REM your docker run/update here...
+        docker logout
       '''
     }
   }
 }
+
 
 
 
