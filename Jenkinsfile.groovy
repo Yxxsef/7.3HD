@@ -88,59 +88,67 @@ stage('Quality Gate (poll)') {
   steps {
     withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
       powershell '''
-        $ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
-        # Parse report-task.txt (key=value lines)
-        $kv = @{}
-        Get-Content ".scannerwork\\report-task.txt" | ForEach-Object {
-          if ($_ -match "^\s*([^=]+)=(.*)$") { $kv[$matches[1]] = $matches[2] }
-        }
+# --- Parse .scannerwork\\report-task.txt ---
+$kv = @{}
+Get-Content ".scannerwork\\report-task.txt" | ForEach-Object {
+  if ($_ -match '^\\s*([^=]+)=(.*)$') { $kv[$matches[1]] = $matches[2] }
+}
 
-        $ceTaskUrl   = $kv["ceTaskUrl"]   # already includes id & org for SonarCloud
-        $projectKey  = $kv["projectKey"]
-        $organization= $kv["organization"]
+$ceTaskUrl    = $kv["ceTaskUrl"]       # e.g. https://sonarcloud.io/api/ce/task?id=...&organization=...
+$projectKey   = $kv["projectKey"]
+$organization = $kv["organization"]
 
-        if (-not $ceTaskUrl) { throw "Could not read ceTaskUrl from .scannerwork\\report-task.txt" }
+if (-not $ceTaskUrl)    { throw "Could not read ceTaskUrl from .scannerwork\\report-task.txt" }
+if (-not $organization) { throw "Could not read organization from .scannerwork\\report-task.txt" }
 
-        $auth = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_TOKEN:"))
+# --- Auth header for SonarCloud: token + ":" base64 ---
+$auth = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_TOKEN:"))
 
-        function CallApi($url) {
-          # Retry transient 5xx
-          for ($i=0; $i -lt 5; $i++) {
-            try {
-              return Invoke-RestMethod -Headers @{ Authorization = $auth } -Uri $url -Method GET
-            } catch {
-              if ($_.Exception.Response.StatusCode.value__ -ge 500 -and $i -lt 4) {
-                Start-Sleep -Seconds (2 * ($i + 1))
-              } else {
-                throw
-              }
-            }
-          }
-        }
-
-        Write-Host "Waiting for CE task to finish: $ceTaskUrl"
-        do {
-          Start-Sleep -Seconds 2
-          $ce = CallApi $ceTaskUrl
-          $state = $ce.task.status
-        } while ($state -notin @("SUCCESS","FAILED","CANCELED"))
-
-        if ($state -ne "SUCCESS") { throw "Sonar CE task ended with $state" }
-
-        $analysisId = $ce.task.analysisId
-        if (-not $analysisId) { throw "No analysisId returned from CE task." }
-
-        # Quality Gate – include organization for SonarCloud
-        $qgUrl = "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysisId&organization=$organization"
-        $qg = CallApi $qgUrl
-        $status = $qg.projectStatus.status
-        Write-Host "Quality Gate status: $status"
-        if ($status -ne "OK") { throw "Quality Gate failed: $status" }
-      '''
+function CallApi([string]$url) {
+  for ($i=0; $i -lt 5; $i++) {
+    try {
+      return Invoke-RestMethod -Headers @{ Authorization = $auth } -Uri $url -Method GET
+    } catch {
+      $status = $_.Exception.Response.StatusCode.value__
+      if ($status -ge 500 -and $i -lt 4) { Start-Sleep -Seconds (2 * ($i + 1)) } else { throw }
     }
   }
 }
+
+Write-Host "Polling SonarCloud CE task: $ceTaskUrl"
+# --- Poll CE task until done ---
+while ($true) {
+  $ce = CallApi $ceTaskUrl
+  $state = $ce.task.status
+  if ($state -eq 'SUCCESS') { break }
+  if ($state -eq 'FAILED'  -or $state -eq 'CANCELED') {
+    throw "SonarCloud background task ended with status: $state"
+  }
+  Start-Sleep -Seconds 3
+}
+
+$analysisId = $ce.task.analysisId
+if (-not $analysisId) { throw "No analysisId returned from CE task (cannot check quality gate)." }
+
+# --- Ask Quality Gate status for this analysis ---
+$qgUrl = "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysisId&organization=$organization"
+$qg = CallApi $qgUrl
+$status = $qg.projectStatus.status
+
+Write-Host "Quality Gate status: $status"
+if ($status -ne 'OK') {
+  # Optional: dump conditions for easier debugging
+  $conditions = $qg.projectStatus.conditions | ForEach-Object { "$($_.metricKey) $($_.comparator) $($_.errorThreshold) => $($_.actualValue)" }
+  Write-Host ("Conditions:" + [Environment]::NewLine + ($conditions -join [Environment]::NewLine))
+  throw "Quality Gate failed: $status"
+}
+'''
+    }
+  }
+}
+
 
 
     stage('Security') {
