@@ -79,34 +79,33 @@ stage('Code Quality (Sonar)') {
   steps {
     withSonarQubeEnv('sonar') {
       script {
-        def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
-            "-Dsonar.projectKey=Yxxsef_7.3HD " +
-            "-Dsonar.organization=yxxsef " +
-            "-Dsonar.sources=app " +
-            "-Dsonar.python.coverage.reportPaths=coverage.xml " +
-            "-Dsonar.projectVersion=%BUILD_NUMBER% " +
-            "-Dsonar.branch.name=%BRANCH_NAME%"
-        // capture ceTaskId for the next stage
-        def rpt = readProperties file: '.scannerwork/report-task.txt'
-        env.SONAR_CE_TASK_ID = rpt['ceTaskId']
+        def scannerHome = tool 'sonar-scanner'
+        bat """
+          "${scannerHome}\\bin\\sonar-scanner.bat" ^
+            -Dsonar.projectKey=Yxxsef_7.3HD ^
+            -Dsonar.organization=yxxsef ^
+            -Dsonar.sources=app ^
+            -Dsonar.python.coverage.reportPaths=coverage.xml ^
+            -Dsonar.projectVersion=${env.BUILD_NUMBER}
+        """
       }
     }
   }
 }
 
 stage('Quality Gate') {
-  when { branch 'main' }                      // optional, speeds non-main builds
+  when { branch 'main' }                    // keep this so we only gate on main
   options { timeout(time: 15, unit: 'MINUTES') }
   steps {
     withSonarQubeEnv('sonar') {
       script {
-        def qg = waitForQualityGate abortPipeline: true
+        def qg = waitForQualityGate(abortPipeline: true)
         echo "Quality Gate: ${qg.status}"
       }
     }
   }
 }
+
 
 
 
