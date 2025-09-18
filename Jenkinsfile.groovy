@@ -78,22 +78,18 @@ pipeline {
 stage('Code Quality (Sonar)') {
   steps {
     withSonarQubeEnv('sonar') {
-      // Personal token used later for API polling
-      withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-        script {
-          def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-          // Run the scanner (note the added version + branch)
-          bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
-              "-Dsonar.projectKey=Yxxsef_7.3HD " +
-              "-Dsonar.organization=yxxsef " +
-              "-Dsonar.sources=app " +
-              "-Dsonar.python.coverage.reportPaths=coverage.xml " +
-              "-Dsonar.projectVersion=%BUILD_NUMBER% " +
-              "-Dsonar.branch.name=%BRANCH_NAME%"
-          // Read ceTaskId written by the scanner
-          def rpt = readProperties file: '.scannerwork/report-task.txt'
-          env.SONAR_CE_TASK_ID = rpt['ceTaskId']
-        }
+      script {
+        def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
+            "-Dsonar.projectKey=Yxxsef_7.3HD " +
+            "-Dsonar.organization=yxxsef " +
+            "-Dsonar.sources=app " +
+            "-Dsonar.python.coverage.reportPaths=coverage.xml " +
+            "-Dsonar.projectVersion=%BUILD_NUMBER% " +
+            "-Dsonar.branch.name=%BRANCH_NAME%"
+        // capture ceTaskId for the next stage
+        def rpt = readProperties file: '.scannerwork/report-task.txt'
+        env.SONAR_CE_TASK_ID = rpt['ceTaskId']
       }
     }
   }
@@ -102,15 +98,13 @@ stage('Code Quality (Sonar)') {
 stage('Quality Gate') {
   options { timeout(time: 15, unit: 'MINUTES') }
   steps {
-    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+    withSonarQubeEnv('sonar') {
       powershell '''
         $ErrorActionPreference = "Stop"
-
-        # Basic auth header: <token>:
-        $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_TOKEN:"))
+        $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_AUTH_TOKEN:"))
         $hdr  = @{ Authorization = "Basic $auth" }
 
-        # Wait for CE task to finish
+        # wait for CE task to finish
         $deadline = (Get-Date).AddMinutes(10)
         do {
           Start-Sleep -Seconds 5
@@ -119,25 +113,20 @@ stage('Quality Gate') {
           Write-Host "Sonar CE task status: $status"
         } until ($status -in @('SUCCESS','FAILED') -or (Get-Date) -gt $deadline)
 
-        if ($status -eq 'FAILED') {
-          throw "Sonar analysis failed (Compute Engine task FAILED)."
-        }
-        if ((Get-Date) -gt $deadline) {
-          throw "Timed out waiting for Sonar analysis."
-        }
+        if ($status -eq 'FAILED') { throw "Sonar analysis failed (CE task FAILED)." }
+        if ((Get-Date) -gt $deadline) { throw "Timed out waiting for Sonar analysis." }
 
-        # Get quality gate for this analysis
+        # get Quality Gate result for this analysis
         $analysisId = $task.task.analysisId
         $qg = Invoke-RestMethod -Headers $hdr -Uri "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysisId"
         $gate = $qg.projectStatus.status
         Write-Host "Quality Gate status: $gate"
-        if ($gate -ne 'OK') {
-          throw "Quality Gate failed: $gate"
-        }
+        if ($gate -ne 'OK') { throw "Quality Gate failed: $gate" }
       '''
     }
   }
 }
+
 
 
     stage('Security') {
