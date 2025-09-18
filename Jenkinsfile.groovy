@@ -30,21 +30,24 @@ pipeline {
 
 stage('Push') {
   steps {
-    script {
-      def tag = "yousxf/7.3hd:${env.GIT_COMMIT}"
+    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
+                                      usernameVariable: 'DH_USER',
+                                      passwordVariable: 'DH_PASS')]) {
+      powershell '''
+        $ErrorActionPreference = "Stop"
+        # Ensure Linux engine
+        if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) { docker context use default } else { docker context use desktop-linux }
 
-      // Build on desktop-linux so the image exists there
-      bat "docker context use desktop-linux && docker build -t \"${tag}\" ."
+        Write-Host "Logging into Docker Hub as $env:DH_USER"
+        cmd /c "echo|set /p=%DH_PASS%" | docker login -u $env:DH_USER --password-stdin
 
-      // For the login block only, neutralize contexts so withDockerRegistry doesn't choke
-      withEnv(['DOCKER_CONTEXT=desktop-linux', 'DOCKER_DEFAULT_CONTEXT=desktop-linux']) {
-        docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-creds') {
-          docker.image(tag).push()
-        }
-      }
+        docker push yousxf/7.3hd:$env:GIT_COMMIT
+        docker logout
+      '''
     }
   }
 }
+
 
 
 
@@ -124,33 +127,27 @@ stage('Quality Gate') {
       }
     }
 
+
+    
 stage('Deploy (staging)') {
   steps {
-    withCredentials([usernamePassword(
-      credentialsId: 'dockerhub-creds',
-      usernameVariable: 'DH_USER',
-      passwordVariable: 'DH_PASS'
-    )]) {
+    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
+                                      usernameVariable: 'DH_USER',
+                                      passwordVariable: 'DH_PASS')]) {
       powershell '''
         $ErrorActionPreference = "Stop"
         if (-not (docker context ls | Select-String -Quiet 'desktop-linux')) { docker context use default } else { docker context use desktop-linux }
 
-        Write-Host "Logging into Docker Hub as $env:DH_USER"
-        $null = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "Docker login failed" }
-
-        $tag = "${env:GIT_COMMIT}"
-        docker pull yousxf/7.3hd:$tag
+        cmd /c "echo|set /p=%DH_PASS%" | docker login -u $env:DH_USER --password-stdin
 
         docker rm -f 7_3hd 2>$null | Out-Null
-        docker run -d --name 7_3hd -p 8000:8000 yousxf/7.3hd:$tag
-
+        docker pull yousxf/7.3hd:$env:GIT_COMMIT
+        docker run -d --name 7_3hd -p 8000:8000 yousxf/7.3hd:$env:GIT_COMMIT
         docker logout
       '''
     }
   }
 }
-
 
 
 
