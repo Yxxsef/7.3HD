@@ -98,10 +98,6 @@ stage('Quality Gate') {
 
 
 
-
-
-
-
     stage('Security') {
       steps {
         withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
