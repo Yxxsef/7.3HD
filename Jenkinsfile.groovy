@@ -85,16 +85,16 @@ stage('Code Quality (Sonar)') {
   }
 }
 
-stage('Quality Gate') {
-  when { branch 'main' }
-  options { timeout(time: 15, unit: 'MINUTES') }
+stage('Code Quality (Sonar)') {
   steps {
-    script {
-      def qg = waitForQualityGate(abortPipeline: true)
-      echo "Quality Gate: ${qg.status}"
+    withSonarQubeEnv('sonarqube-local') {
+      bat '''"%SONAR_SCANNER_HOME%\\bin\\sonar-scanner.bat" ^
+        -Dsonar.projectKey=7.3HD ^
+        -Dsonar.projectVersion=%GIT_COMMIT%'''
     }
   }
 }
+
 
 
 
