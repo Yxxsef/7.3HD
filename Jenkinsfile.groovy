@@ -87,41 +87,10 @@ pipeline {
 
 
     
-stage('Quality Gate (poll)') {
+stage('Quality Gate') {
   steps {
-    withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
-      powershell '''
-$ErrorActionPreference = "Stop"
-
-# Read CE task info written by the scanner
-$rt = Get-Content ".scannerwork/report-task.txt" | ConvertFrom-StringData
-$ceTaskId     = $rt['ceTaskId']
-$server       = $rt['serverUrl']          # e.g. https://sonarcloud.io
-$projectKey   = "Yxxsef_7.3HD"
-$organization = "yxxsef"
-$headers      = @{ Authorization = "Bearer $env:SONAR_TOKEN" }
-
-if (-not $ceTaskId -or -not $server) {
-  throw "Could not read ceTaskId/serverUrl from .scannerwork/report-task.txt"
-}
-
-# 1) Poll CE task (NO organization param)
-$deadline = (Get-Date).AddMinutes(5)
-do {
-  $ce = Invoke-RestMethod -Headers $headers -Uri "$server/api/ce/task?id=$ceTaskId" -Method GET
-  $state = $ce.task.status  # PENDING | IN_PROGRESS | SUCCESS | FAILED | CANCELED
-  if ($state -in @('SUCCESS','FAILED','CANCELED')) { break }
-  Start-Sleep -Seconds 3
-} while ((Get-Date) -lt $deadline)
-
-if ($state -ne 'SUCCESS') { throw "Sonar CE task status: $state" }
-
-# 2) Get Quality Gate (organization IS required here)
-$qg = Invoke-RestMethod -Headers $headers -Uri "$server/api/qualitygates/project_status?projectKey=$projectKey&organization=$organization" -Method GET
-$status = $qg.projectStatus.status  # OK | ERROR | WARN
-Write-Host "Quality Gate: $status"
-if ($status -ne 'OK') { throw "Quality Gate failed: $status" }
-'''
+    timeout(time: 5, unit: 'MINUTES') {
+      waitForQualityGate()  // aborts the build if the Quality Gate fails
     }
   }
 }
