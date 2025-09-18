@@ -96,34 +96,46 @@ Get-Content ".scannerwork\\report-task.txt" | ForEach-Object {
   if ($_ -match '^\\s*([^=]+)=(.*)$') { $kv[$matches[1]] = $matches[2] }
 }
 
-$ceTaskUrl    = $kv["ceTaskUrl"]       # e.g. https://sonarcloud.io/api/ce/task?id=...&organization=...
-$projectKey   = $kv["projectKey"]
+$ceTaskUrl    = $kv["ceTaskUrl"]       # e.g. https://sonarcloud.io/api/ce/task?id=...
 $organization = $kv["organization"]
-
 if (-not $ceTaskUrl)    { throw "Could not read ceTaskUrl from .scannerwork\\report-task.txt" }
 if (-not $organization) { throw "Could not read organization from .scannerwork\\report-task.txt" }
 
-# --- Auth header for SonarCloud: token + ":" base64 ---
-$auth = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_TOKEN:"))
+# Ensure organization is on the CE URL
+if ($ceTaskUrl -notmatch '([?&])organization=') {
+  $sep = ($ceTaskUrl -match '\\?') ? '&' : '?'
+  $ceTaskUrl = "$ceTaskUrl${sep}organization=$organization"
+}
 
-function CallApi([string]$url) {
-  for ($i=0; $i -lt 5; $i++) {
+# Basic auth for endpoints that need it (quality gate)
+$authHeader = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_TOKEN:"))
+
+function Invoke-Json([string]$url, [bool]$withAuth = $true) {
+  $headers = @{ Accept = 'application/json' }
+  if ($withAuth) { $headers['Authorization'] = $authHeader }
+
+  for ($i=0; $i -lt 6; $i++) {
     try {
-      return Invoke-RestMethod -Headers @{ Authorization = $auth } -Uri $url -Method GET
+      return Invoke-RestMethod -Headers $headers -Uri $url -Method GET -TimeoutSec 30
     } catch {
-      $status = $_.Exception.Response.StatusCode.value__
-      if ($status -ge 500 -and $i -lt 4) { Start-Sleep -Seconds (2 * ($i + 1)) } else { throw }
+      $code = $_.Exception.Response.StatusCode.value__ 2>$null
+      if (($code -ge 500 -or -not $code) -and $i -lt 5) {
+        Start-Sleep -Seconds ([int][math]::Pow(2, $i))   # 1,2,4,8,16,32
+      } else {
+        throw
+      }
     }
   }
 }
 
 Write-Host "Polling SonarCloud CE task: $ceTaskUrl"
-# --- Poll CE task until done ---
+
+# --- Poll CE task (NO AUTH here) ---
 while ($true) {
-  $ce = CallApi $ceTaskUrl
+  $ce = Invoke-Json $ceTaskUrl $false
   $state = $ce.task.status
   if ($state -eq 'SUCCESS') { break }
-  if ($state -eq 'FAILED'  -or $state -eq 'CANCELED') {
+  if ($state -in @('FAILED','CANCELED')) {
     throw "SonarCloud background task ended with status: $state"
   }
   Start-Sleep -Seconds 3
@@ -132,22 +144,23 @@ while ($true) {
 $analysisId = $ce.task.analysisId
 if (-not $analysisId) { throw "No analysisId returned from CE task (cannot check quality gate)." }
 
-# --- Ask Quality Gate status for this analysis ---
+# --- Quality Gate (AUTH required) ---
 $qgUrl = "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysisId&organization=$organization"
-$qg = CallApi $qgUrl
-$status = $qg.projectStatus.status
+$qg    = Invoke-Json $qgUrl $true
 
+$status = $qg.projectStatus.status
 Write-Host "Quality Gate status: $status"
+
 if ($status -ne 'OK') {
-  # Optional: dump conditions for easier debugging
-  $conditions = $qg.projectStatus.conditions | ForEach-Object { "$($_.metricKey) $($_.comparator) $($_.errorThreshold) => $($_.actualValue)" }
-  Write-Host ("Conditions:" + [Environment]::NewLine + ($conditions -join [Environment]::NewLine))
+  $cond = $qg.projectStatus.conditions | ForEach-Object { "$($_.metricKey) $($_.comparator) $($_.errorThreshold) => $($_.actualValue)" }
+  Write-Host ("Conditions:" + [Environment]::NewLine + ($cond -join [Environment]::NewLine))
   throw "Quality Gate failed: $status"
 }
 '''
     }
   }
 }
+
 
 
 
