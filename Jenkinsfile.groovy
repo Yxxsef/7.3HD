@@ -31,13 +31,21 @@ pipeline {
 stage('Push') {
   steps {
     script {
-      def image = docker.build("yousxf/7.3hd:${env.GIT_COMMIT}")
-      docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-creds') {
-        image.push()
+      def tag = "yousxf/7.3hd:${env.GIT_COMMIT}"
+
+      // Build on desktop-linux so the image exists there
+      bat "docker context use desktop-linux && docker build -t \"${tag}\" ."
+
+      // For the login block only, neutralize contexts so withDockerRegistry doesn't choke
+      withEnv(['DOCKER_CONTEXT=desktop-linux', 'DOCKER_DEFAULT_CONTEXT=desktop-linux']) {
+        docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-creds') {
+          docker.image(tag).push()
+        }
       }
     }
   }
 }
+
 
 
 
