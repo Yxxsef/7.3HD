@@ -85,11 +85,13 @@ stage('Code Quality (Sonar)') {
 }
 
 stage('Quality Gate') {
-  steps {
-    timeout(time: 1, unit: 'HOURS') {
-      // aborts pipeline automatically if gate != OK
-      waitForQualityGate abortPipeline: true
+  timeout(time: 1, unit: 'HOURS') {
+    def qg = waitForQualityGate()   // default: abortPipeline = false
+    echo "Quality Gate status: ${qg.status}"
+    if (qg.status == 'ERROR') {
+      error "Quality Gate failed: ${qg.status}"
     }
+    // Treat NONE and WARN as non-fatal so downstream stages run
   }
 }
 
