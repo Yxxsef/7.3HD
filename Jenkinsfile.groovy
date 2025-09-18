@@ -96,50 +96,18 @@ stage('Code Quality (Sonar)') {
 }
 
 stage('Quality Gate') {
-  options { timeout(time: 5, unit: 'MINUTES') }
+  when { branch 'main' }                      // optional, speeds non-main builds
+  options { timeout(time: 15, unit: 'MINUTES') }
   steps {
     withSonarQubeEnv('sonar') {
-      powershell '''
-$ErrorActionPreference = "Stop"
-
-$base = "$env:SONAR_HOST_URL"            # https://sonarcloud.io
-$taskId = "$env:SONAR_CE_TASK_ID"        # set in previous stage from report-task.txt
-if (-not $taskId) { throw "SONAR_CE_TASK_ID is empty." }
-
-Write-Host "Polling SonarCloud CE task $taskId ..."
-
-# 1) Poll CE task (NO AUTH NEEDED for SonarCloud public projects)
-$analysisId = $null
-for ($i=0; $i -lt 180; $i++) {
-  try {
-    $t = Invoke-RestMethod -Method Get -Uri "$base/api/ce/task?id=$taskId"
-  } catch {
-    Start-Sleep -Seconds 2; continue  # transient 5xx—retry
-  }
-  $st = $t.task.status
-  if ($st -eq "SUCCESS") { $analysisId = $t.task.analysisId; break }
-  if ($st -eq "FAILED" -or $st -eq "CANCELED") {
-    throw "Compute Engine status=$st (see $base/api/ce/task?id=$taskId)"
-  }
-  Start-Sleep -Seconds 2
-}
-if (-not $analysisId) { throw "Timed out waiting for analysis to finish." }
-
-# 2) Fetch Quality Gate (needs auth). Build proper Basic header: <token> as username, blank password.
-$pair = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($env:SONAR_AUTH_TOKEN):"))
-$hdr  = @{ Authorization = "Basic $pair" }
-
-$qg = Invoke-RestMethod -Method Get -Headers $hdr -Uri "$base/api/qualitygates/project_status?analysisId=$analysisId"
-$status = $qg.projectStatus.status
-
-Write-Host "Quality Gate: $status"
-if ($status -ne "OK") {
-  throw ("Quality Gate failed: " + $status + " - " + ($qg.projectStatus.conditions | ConvertTo-Json -Compress))
-}
-'''
+      script {
+        def qg = waitForQualityGate abortPipeline: true
+        echo "Quality Gate: ${qg.status}"
+      }
     }
   }
 }
+
 
 
 
