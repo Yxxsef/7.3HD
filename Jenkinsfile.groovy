@@ -38,7 +38,6 @@ stage('Push') {
         @echo off
         docker context use desktop-linux
         echo Logging into Docker Hub as %DH_USER%
-        rem send ASCII without newline:
         echo|set /p=%DH_PASS%| docker login -u %DH_USER% --password-stdin
         if errorlevel 1 exit /b 1
 
@@ -138,16 +137,17 @@ stage('Deploy (staging)') {
     withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID,
                                       usernameVariable: 'DH_USER',
                                       passwordVariable: 'DH_PASS')]) {
-      powershell '''
-        $ErrorActionPreference = "Stop"
+      bat '''
+        @echo off
         docker context use desktop-linux
-        $null = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "docker login failed" }
+        echo|set /p=%DH_PASS%| docker login -u %DH_USER% --password-stdin
+        if errorlevel 1 exit /b 1
 
-        docker rm -f 7_3hd 2>$null | Out-Null
-        docker pull $env:DOCKER_REPO:$env:GIT_COMMIT
-        docker run -d --name 7_3hd -p 8080:80 $env:DOCKER_REPO:$env:GIT_COMMIT
-        docker logout | Out-Null
+        docker rm -f 7_3hd >nul 2>&1
+        docker pull %DOCKER_REPO%:%GIT_COMMIT%
+        docker run -d --name 7_3hd -p 8080:8080 %DOCKER_REPO%:%GIT_COMMIT%
+
+        docker logout >nul
       '''
     }
   }
