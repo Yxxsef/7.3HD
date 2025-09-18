@@ -96,36 +96,51 @@ stage('Code Quality (Sonar)') {
 }
 
 stage('Quality Gate') {
-  options { timeout(time: 15, unit: 'MINUTES') }
+  options { timeout(time: 5, unit: 'MINUTES') }
   steps {
     withSonarQubeEnv('sonar') {
       powershell '''
-        $ErrorActionPreference = "Stop"
-        $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:SONAR_AUTH_TOKEN:"))
-        $hdr  = @{ Authorization = "Basic $auth" }
+$ErrorActionPreference = "Stop"
 
-        # wait for CE task to finish
-        $deadline = (Get-Date).AddMinutes(10)
-        do {
-          Start-Sleep -Seconds 5
-          $task = Invoke-RestMethod -Headers $hdr -Uri "https://sonarcloud.io/api/ce/task?id=$env:SONAR_CE_TASK_ID"
-          $status = $task.task.status
-          Write-Host "Sonar CE task status: $status"
-        } until ($status -in @('SUCCESS','FAILED') -or (Get-Date) -gt $deadline)
+$base = "$env:SONAR_HOST_URL"            # https://sonarcloud.io
+$taskId = "$env:SONAR_CE_TASK_ID"        # set in previous stage from report-task.txt
+if (-not $taskId) { throw "SONAR_CE_TASK_ID is empty." }
 
-        if ($status -eq 'FAILED') { throw "Sonar analysis failed (CE task FAILED)." }
-        if ((Get-Date) -gt $deadline) { throw "Timed out waiting for Sonar analysis." }
+Write-Host "Polling SonarCloud CE task $taskId ..."
 
-        # get Quality Gate result for this analysis
-        $analysisId = $task.task.analysisId
-        $qg = Invoke-RestMethod -Headers $hdr -Uri "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$analysisId"
-        $gate = $qg.projectStatus.status
-        Write-Host "Quality Gate status: $gate"
-        if ($gate -ne 'OK') { throw "Quality Gate failed: $gate" }
-      '''
+# 1) Poll CE task (NO AUTH NEEDED for SonarCloud public projects)
+$analysisId = $null
+for ($i=0; $i -lt 180; $i++) {
+  try {
+    $t = Invoke-RestMethod -Method Get -Uri "$base/api/ce/task?id=$taskId"
+  } catch {
+    Start-Sleep -Seconds 2; continue  # transient 5xx—retry
+  }
+  $st = $t.task.status
+  if ($st -eq "SUCCESS") { $analysisId = $t.task.analysisId; break }
+  if ($st -eq "FAILED" -or $st -eq "CANCELED") {
+    throw "Compute Engine status=$st (see $base/api/ce/task?id=$taskId)"
+  }
+  Start-Sleep -Seconds 2
+}
+if (-not $analysisId) { throw "Timed out waiting for analysis to finish." }
+
+# 2) Fetch Quality Gate (needs auth). Build proper Basic header: <token> as username, blank password.
+$pair = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($env:SONAR_AUTH_TOKEN):"))
+$hdr  = @{ Authorization = "Basic $pair" }
+
+$qg = Invoke-RestMethod -Method Get -Headers $hdr -Uri "$base/api/qualitygates/project_status?analysisId=$analysisId"
+$status = $qg.projectStatus.status
+
+Write-Host "Quality Gate: $status"
+if ($status -ne "OK") {
+  throw ("Quality Gate failed: " + $status + " - " + ($qg.projectStatus.conditions | ConvertTo-Json -Compress))
+}
+'''
     }
   }
 }
+
 
 
 
