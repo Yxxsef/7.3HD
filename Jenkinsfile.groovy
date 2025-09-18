@@ -158,20 +158,19 @@ stage('Deploy (staging)') {
 
 
 
-    stage('Release') {
-      when { branch 'main' }
-      steps {
-        input message: 'Promote to production?', ok: 'Release'
-        powershell '''
-          $ErrorActionPreference="Stop"
-          docker pull ${env.IMAGE}
-          docker tag ${env.IMAGE} ${env.DOCKERHUB_REPO}:${env.BUILD_NUMBER}
-          docker tag ${env.IMAGE} ${env.DOCKERHUB_REPO}:prod
-          docker push ${env.DOCKERHUB_REPO}:${env.BUILD_NUMBER}
-          docker push ${env.DOCKERHUB_REPO}:prod
-        '''
-      }
-    }
+stage('Release') {
+  when { beforeInput true; expression { return true } }
+  input { message 'Promote to production?' }
+  steps {
+    bat '''
+      docker context use desktop-linux
+      docker pull %DOCKERHUB_REPO%:staging
+      docker tag  %DOCKERHUB_REPO%:staging %DOCKERHUB_REPO%:prod
+      docker push %DOCKERHUB_REPO%:prod
+    '''
+  }
+}
+
 
     stage('Monitoring (ping)') {
       steps {
