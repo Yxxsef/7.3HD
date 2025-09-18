@@ -34,19 +34,21 @@ stage('Push') {
     withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID,
                                       usernameVariable: 'DH_USER',
                                       passwordVariable: 'DH_PASS')]) {
-      powershell '''
-        $ErrorActionPreference = "Stop"
+      bat '''
+        @echo off
         docker context use desktop-linux
-        Write-Host "Logging into Docker Hub as $env:DH_USER"
-        $null = ($env:DH_PASS | docker login -u $env:DH_USER --password-stdin) 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "docker login failed" }
+        echo Logging into Docker Hub as %DH_USER%
+        rem send ASCII without newline:
+        echo|set /p=%DH_PASS%| docker login -u %DH_USER% --password-stdin
+        if errorlevel 1 exit /b 1
 
-        docker push $env:DOCKER_REPO:$env:GIT_COMMIT
-        docker logout | Out-Null
+        docker push %DOCKER_REPO%:%GIT_COMMIT%
+        docker logout >nul
       '''
     }
   }
 }
+
 
 
 
