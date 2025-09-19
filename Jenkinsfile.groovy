@@ -9,13 +9,12 @@ pipeline {
     DOCKER_CRED_ID = 'dockerhub-creds'
     IMAGE          = "${DOCKERHUB_REPO}:${GIT_COMMIT}"
     COMPOSE_FILE   = 'docker-compose.staging.yml'
-    SONAR_INSTANCE = 'sonar'           // Jenkins Sonar server name
+    SONAR_INSTANCE = 'sonar'
     SONAR_PROJECT  = 'Yxxsef_7.3HD'
     SONAR_ORG      = 'yxxsef'
   }
 
   stages {
-
     stage('Build') {
       steps {
         powershell '''
@@ -35,8 +34,6 @@ pipeline {
           bat '''
             docker context use desktop-linux
             echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
-
-            REM ---- DEBUG: show the vars that build image refs ----
             echo === DEBUG VARS ===
             echo GIT_COMMIT=%GIT_COMMIT%
             echo IMAGE=%IMAGE%
@@ -44,8 +41,6 @@ pipeline {
             echo DOCKER_CRED_ID=%DOCKER_CRED_ID%
             echo ====================
             docker images | findstr 7.3hd
-
-            REM ---- push/tag ----
             docker push %IMAGE%
             docker tag %IMAGE% %DOCKERHUB_REPO%:staging
             docker push %DOCKERHUB_REPO%:staging
@@ -75,31 +70,25 @@ pipeline {
       }
     }
 
-
-stage('Code Quality (Sonar)') {
-  steps {
-    withSonarQubeEnv('sonarqube-local') {
-      bat '"%SONAR_SCANNER_HOME%\\bin\\sonar-scanner.bat" -Dsonar.projectKey=7.3HD -Dsonar.projectVersion=%GIT_COMMIT%'
+    stage('Code Quality (Sonar)') {
+      steps {
+        withSonarQubeEnv('sonarqube-local') {
+          def scannerHome = tool 'sonar-scanner'
+          bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" ^ -Dsonar.projectKey=7.3HD ^ -Dsonar.projectVersion=%GIT_COMMIT%"
+        }
+      }
     }
-  }
-}
 
-stage('Quality Gate') {
-  when { branch 'main' }
-  options { timeout(time: 15, unit: 'MINUTES') }
-  steps {
-    script {
-      def qg = waitForQualityGate(abortPipeline: true)
-      echo "Quality Gate: ${qg.status}"
+    stage('Quality Gate') {
+      when { branch 'main' }
+      options { timeout(time: 15, unit: 'MINUTES') }
+      steps {
+        script {
+          def qg = waitForQualityGate(abortPipeline: true)
+          echo "Quality Gate: ${qg.status}"
+        }
+      }
     }
-  }
-}
-
-
-
-
-
-
 
     stage('Security') {
       steps {
@@ -126,15 +115,12 @@ stage('Quality Gate') {
           bat '''
             docker context use desktop-linux
             echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
-
             echo === DEPLOY DEBUG ===
             echo IMAGE=%IMAGE%
             echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
             echo DOCKER_CRED_ID=%DOCKER_CRED_ID%
             echo =====================
-
             docker pull %DOCKERHUB_REPO%:staging
-            REM your docker run/update here...
             docker logout
           '''
         }
@@ -148,12 +134,10 @@ stage('Quality Gate') {
           bat '''
             docker context use desktop-linux
             echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
-
             echo === RELEASE DEBUG ===
             echo IMAGE=%IMAGE%
             echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
             echo ======================
-
             docker pull %IMAGE%
             docker tag %IMAGE% %DOCKERHUB_REPO%:prod
             docker push %DOCKERHUB_REPO%:prod
