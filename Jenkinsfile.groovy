@@ -74,9 +74,8 @@ stage('Code Quality (Sonar)') {
   steps {
     withSonarQubeEnv('sonarqube-local') {
       script {
-        def scannerHome = tool name: 'sonar-scanner'   // matches the tool name in Global Tool Configuration
+        def scannerHome = tool 'sonar-scanner'
         bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" " +
-            "-Dsonar.host.url=http://host.docker.internal:9001 " +
             "-Dsonar.projectKey=7.3HD " +
             "-Dsonar.projectVersion=${GIT_COMMIT}"
       }
@@ -84,17 +83,14 @@ stage('Code Quality (Sonar)') {
   }
 }
 
-
 stage('Quality Gate') {
-  when { branch 'main' }
-  options { timeout(time: 15, unit: 'MINUTES') }
   steps {
-    script {
-      def qg = waitForQualityGate(abortPipeline: true)
-      echo "Quality Gate: ${qg.status}"
+    timeout(time: 10, unit: 'MINUTES') {
+      waitForQualityGate abortPipeline: true
     }
   }
 }
+
 
 
     stage('Security') {
