@@ -70,25 +70,29 @@ pipeline {
       }
     }
 
-    stage('Code Quality (Sonar)') {
-      steps {
-        withSonarQubeEnv('sonarqube-local') {
-          def scannerHome = tool 'sonar-scanner'
-          bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" ^ -Dsonar.projectKey=7.3HD ^ -Dsonar.projectVersion=%GIT_COMMIT%"
-        }
+stage('Code Quality (Sonar)') {
+  steps {
+    withSonarQubeEnv('sonarqube-local') {
+      script {
+        def scannerHome = tool 'sonar-scanner'
+        bat "\"${scannerHome}\\bin\\sonar-scanner.bat\" -Dsonar.projectKey=7.3HD -Dsonar.projectVersion=%GIT_COMMIT%"
       }
     }
+  }
+}
 
-    stage('Quality Gate') {
-      when { branch 'main' }
-      options { timeout(time: 15, unit: 'MINUTES') }
-      steps {
-        script {
-          def qg = waitForQualityGate(abortPipeline: true)
-          echo "Quality Gate: ${qg.status}"
-        }
-      }
+
+stage('Quality Gate') {
+  when { branch 'main' }
+  options { timeout(time: 15, unit: 'MINUTES') }
+  steps {
+    script {
+      def qg = waitForQualityGate(abortPipeline: true)
+      echo "Quality Gate: ${qg.status}"
     }
+  }
+}
+
 
     stage('Security') {
       steps {
