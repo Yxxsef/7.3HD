@@ -111,24 +111,54 @@ stage('Quality Gate') {
       }
     }
 
-    stage('Deploy (staging)') {
-      when { branch 'main' }
-      steps {
-        withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          bat '''
-            docker context use desktop-linux
-            echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
-            echo === DEPLOY DEBUG ===
-            echo IMAGE=%IMAGE%
-            echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
-            echo DOCKER_CRED_ID=%DOCKER_CRED_ID%
-            echo =====================
-            docker pull %DOCKERHUB_REPO%:staging
-            docker logout
-          '''
-        }
-      }
+stage('Deploy (staging)') {
+  when { branch 'main' }
+  steps {
+    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+      bat '''
+        docker context use desktop-linux
+        echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
+        docker pull %DOCKERHUB_REPO%:staging
+        docker compose -f docker-compose.staging.yml down -v || echo no stack
+        docker compose -f docker-compose.staging.yml up -d --pull always --remove-orphans
+        docker compose -f docker-compose.staging.yml ps
+        docker logout
+      '''
     }
+  }
+  post {
+    failure {
+      bat 'docker logs --tail=500 hd-staging > deploy-fail-logs.txt || echo no logs'
+      archiveArtifacts artifacts: 'deploy-fail-logs.txt', fingerprint: true
+    }
+  }
+}
+
+stage('Smoke test (staging)') {
+  steps {
+    powershell '''
+      $ErrorActionPreference="Stop"
+      $deadline = (Get-Date).AddMinutes(2)
+      do {
+        Start-Sleep 3
+        $h = docker inspect --format "{{.State.Health.Status}}" hd-staging 2>$null
+      } until ($h -eq "healthy" -or (Get-Date) -gt $deadline)
+      if ($h -ne "healthy") { throw "Service never became healthy" }
+
+      $r = Invoke-WebRequest http://localhost:8000/metrics -TimeoutSec 5 -UseBasicParsing
+      if ($r.StatusCode -ne 200) { throw "metrics returned $($r.StatusCode)" }
+      $r.Content | Out-File -Encoding utf8 metrics.txt
+
+      try {
+        (Invoke-RestMethod http://localhost:8000/health -TimeoutSec 5) | Out-String | Tee-Object smoke-health.txt | Out-Null
+      } catch { "no /health endpoint; metrics OK" | Tee-Object smoke-health.txt | Out-Null }
+
+      docker inspect hd-staging > inspect.json
+    '''
+    archiveArtifacts artifacts: 'metrics.txt,smoke-health.txt,inspect.json', fingerprint: true
+  }
+}
+
 
     stage('Release') {
       when { branch 'main' }
