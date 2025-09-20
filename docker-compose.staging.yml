@@ -1,16 +1,20 @@
-version: "3.9"
 services:
   app:
     image: ${DOCKERHUB_REPO:-yousxf/7.3hd}:staging
     container_name: hd-staging
-    ports: ["8000:8000"]
+    ports:
+      - "8000:8000"
     environment:
       UVICORN_HOST: 0.0.0.0
       UVICORN_PORT: 8000
       UVICORN_WORKERS: "2"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -fsS http://127.0.0.1:8000/metrics >/dev/null"]
+      test:
+        [
+          "CMD-SHELL",
+          "python - <<'PY'\nimport urllib.request,sys\ntry:\n  urllib.request.urlopen('http://127.0.0.1:8000/metrics', timeout=2)\n  sys.exit(0)\nexcept Exception:\n  sys.exit(1)\nPY"
+        ]
       interval: 10s
       timeout: 3s
       retries: 6
