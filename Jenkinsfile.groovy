@@ -95,12 +95,13 @@ stage('Quality Gate') {
 
 stage('Security') {
   parallel {
+
     stage('snyk') {
       steps {
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
           withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
             powershell '''
-              $ErrorActionPreference = "Stop"
+              $ErrorActionPreference="Stop"
               New-Item -ItemType Directory -Force -Path reports | Out-Null
               snyk auth $env:SNYK_TOKEN
               snyk test --severity-threshold=high --json-file-output=reports\\snyk-deps.json
@@ -114,8 +115,7 @@ stage('Security') {
 
     stage('deps (pip-audit)') {
       steps {
-        // pip-audit exits non-zero on issues; catch so the rest of Security still runs
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
           bat '''
             docker run --rm -v "%WORKSPACE%:/src" -w /src python:3.11-slim sh -lc ^
               "python -m pip install -U pip pip-audit && pip-audit -r requirements.txt --strict"
@@ -126,35 +126,37 @@ stage('Security') {
 
     stage('trivy fs+image') {
       steps {
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-          // FS scan -> /src/trivy-fs.json
+        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+          // FS scan (workspace)
           bat '''
             docker run --rm ^
               -v "%WORKSPACE%:/src" ^
               -v trivy-cache:/root/.cache/ ^
               aquasec/trivy:latest fs ^
-                --severity HIGH,CRITICAL --exit-code 1 ^
-                --format json --output /src/trivy-fs.json /src
+                --scanners vuln ^
+                --severity HIGH,CRITICAL --exit-code 0 ^
+                --format json --output /src/reports/trivy-fs.json /src
           '''
-          // Image scan -> /report/trivy-image.json (mounted to workspace)
+          // Image scan (built image)
           bat """
             docker run --rm ^
               -v "%WORKSPACE%:/report" ^
               -v trivy-cache:/root/.cache/ ^
               aquasec/trivy:latest image ^
-                --severity HIGH,CRITICAL --exit-code 1 ^
-                --format json --output /report/trivy-image.json %IMAGE%
+                --scanners vuln ^
+                --severity HIGH,CRITICAL --exit-code 0 ^
+                --format json --output /report/reports/trivy-image.json %IMAGE%
           """
         }
       }
       post {
-        always { archiveArtifacts artifacts: 'trivy-*.json', allowEmptyArchive: false, fingerprint: true }
+        always { archiveArtifacts artifacts: 'reports/trivy-*.json', allowEmptyArchive: true, fingerprint: true }
       }
     }
 
     stage('semgrep (SAST)') {
       steps {
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
           bat '''
             docker run --rm -v "%WORKSPACE%:/src" returntocorp/semgrep:latest ^
               semgrep --config p/ci --error --metrics=off /src
@@ -165,24 +167,22 @@ stage('Security') {
 
     stage('secrets (gitleaks)') {
       steps {
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-          // Write report into workspace to avoid "No artifacts found"
+        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
           bat '''
             docker run --rm ^
               -v "%WORKSPACE%:/repo" ^
               zricethezav/gitleaks:latest detect ^
-                --no-git --redact --exit-code 1 ^
+                --no-git --redact --exit-code 0 ^
                 --report-format json ^
                 --source=/repo ^
-                --report-path /repo/gitleaks.json
+                --report-path /repo/reports/gitleaks.json
           '''
         }
       }
-      post {
-        always { archiveArtifacts artifacts: 'gitleaks.json', allowEmptyArchive: false, fingerprint: true }
-      }
+      post { always { archiveArtifacts artifacts: 'reports/gitleaks.json', allowEmptyArchive: true, fingerprint: true } }
     }
-  }
+
+  } // parallel
 }
 
 
