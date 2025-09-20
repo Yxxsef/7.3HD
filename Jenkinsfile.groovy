@@ -170,13 +170,13 @@ stage('secrets (gitleaks)') {
     catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
       bat """
       if not exist reports mkdir reports
+      del /f /q reports\\gitleaks.json 2>nul
 
       docker run --rm ^
         -v "%WORKSPACE%:/repo" ^
-        -v "%WORKSPACE%\\gitleaks.toml:/gitleaks.toml" ^
         zricethezav/gitleaks:latest detect ^
           --no-git --redact --exit-code 0 ^
-          --config-path /gitleaks.toml ^
+          -c /repo/.gitleaks.toml ^
           --report-format json ^
           --source=/repo ^
           --report-path /repo/reports/gitleaks.json
@@ -189,6 +189,7 @@ stage('secrets (gitleaks)') {
     }
   }
 }
+
 
 
   } // parallel
