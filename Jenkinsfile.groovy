@@ -185,6 +185,41 @@ stage('Security') {
   } // parallel
 }
 
+    
+stage('Security Gate') {
+  steps {
+    script {
+      def img = fileExists('reports/trivy-image.json') ? readJSON(file: 'reports/trivy-image.json') : [:]
+      def fs  = fileExists('reports/trivy-fs.json')    ? readJSON(file: 'reports/trivy-fs.json')    : [:]
+      def trivyCount = 0
+      [img, fs].each { rep ->
+        if (rep?.Results) {
+          rep.Results.each { r ->
+            (r.Vulnerabilities ?: []).each { v ->
+              if (['HIGH','CRITICAL'].contains(v.Severity)) trivyCount++
+            }
+          }
+        }
+      }
+
+      def snykDeps  = fileExists('reports/snyk-deps.json') ? readJSON(file: 'reports/snyk-deps.json') : [:]
+      def snykCode  = fileExists('reports/snyk-code.json') ? readJSON(file: 'reports/snyk-code.json') : [:]
+      def snykCount = 0
+      if (snykDeps?.vulnerabilities) snykCount += snykDeps.vulnerabilities.size()
+      if (snykCode?.issues)          snykCount += snykCode.issues.size()
+
+      def leaks = fileExists('reports/gitleaks.json') ? readJSON(file: 'reports/gitleaks.json') : []
+      def leakCount = (leaks instanceof List) ? leaks.size() : 0
+
+      echo "Trivy HIGH/CRITICAL: ${trivyCount}, Snyk issues: ${snykCount}, Secrets: ${leakCount}"
+      if (trivyCount > 0 || snykCount > 0 || leakCount > 0) {
+        error "Security Gate failed"
+        // or: currentBuild.result = 'UNSTABLE'
+      }
+    }
+  }
+}
+
 
 
 
