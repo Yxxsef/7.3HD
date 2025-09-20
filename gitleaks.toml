@@ -1,0 +1,14 @@
+title = "7.3HD gitleaks allowlist"
+description = "Allow generated scan reports and the known public GPG key from the official python base image"
+
+[allowlist]
+  paths = [
+    '''^reports/trivy-image\.json$''',
+    '''^reports/trivy-fs\.json$''',
+    '''^/repo/reports/trivy-image\.json$''',  # when scanned inside the Dockerized gitleaks step
+    '''^/repo/reports/trivy-fs\.json$'''
+  ]
+
+  regexes = [
+    '''GPG_KEY=A035C8C19219BA821ECEA86B64E628F8D684696D'''
+  ]
