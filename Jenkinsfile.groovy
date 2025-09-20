@@ -283,25 +283,28 @@ stage('Smoke test (staging)') {
 }
 
 
-    stage('Release') {
-      when { branch 'main' }
-      steps {
-        withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          bat '''
-            docker context use desktop-linux
-            echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
-            echo === RELEASE DEBUG ===
-            echo IMAGE=%IMAGE%
-            echo DOCKERHUB_REPO=%DOCKERHUB_REPO%
-            echo ======================
-            docker pull %IMAGE%
-            docker tag %IMAGE% %DOCKERHUB_REPO%:prod
-            docker push %DOCKERHUB_REPO%:prod
-            docker logout
-          '''
-        }
-      }
+stage('Release') {
+  when { buildingTag() }                     
+  environment {
+    TAG = "${env.BRANCH_NAME}"               
+  }
+  steps {
+    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+      bat '''
+        setlocal EnableDelayedExpansion
+        docker context use desktop-linux
+        echo %DH_PASS% | docker login -u %DH_USER% --password-stdin
+        docker pull %IMAGE%
+        docker tag %IMAGE% %DOCKERHUB_REPO%:prod
+        docker tag %IMAGE% %DOCKERHUB_REPO%:%TAG%
+        docker push %DOCKERHUB_REPO%:prod
+        docker push %DOCKERHUB_REPO%:%TAG%
+        docker logout
+      '''
     }
+  }
+}
+
 
     stage('Monitoring (ping)') {
       steps {
