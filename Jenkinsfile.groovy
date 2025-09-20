@@ -97,14 +97,16 @@ stage('Security') {
   parallel {
     stage('snyk') {
       steps {
-        withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-          powershell '''
-            $ErrorActionPreference="Stop"
-            mkdir reports -ea 0 | Out-Null
-            snyk auth $env:SNYK_TOKEN
-            snyk test --severity-threshold=high --json-file-output=reports\\snyk-deps.json
-            snyk code test --severity-threshold=high --json-file-output=reports\\snyk-code.json
-          '''
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+            powershell '''
+              $ErrorActionPreference = "Stop"
+              New-Item -ItemType Directory -Force -Path reports | Out-Null
+              snyk auth $env:SNYK_TOKEN
+              snyk test --severity-threshold=high --json-file-output=reports\\snyk-deps.json
+              snyk code test --severity-threshold=high --json-file-output=reports\\snyk-code.json
+            '''
+          }
         }
       }
       post { always { archiveArtifacts artifacts: 'reports/*.json', fingerprint: true } }
@@ -112,44 +114,73 @@ stage('Security') {
 
     stage('deps (pip-audit)') {
       steps {
-        bat '''
-          docker run --rm -v "%WORKSPACE%:/src" -w /src python:3.11-slim sh -lc ^
-            "python -m pip install -U pip pip-audit && pip-audit -r requirements.txt --strict"
-        '''
+        // pip-audit exits non-zero on issues; catch so the rest of Security still runs
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          bat '''
+            docker run --rm -v "%WORKSPACE%:/src" -w /src python:3.11-slim sh -lc ^
+              "python -m pip install -U pip pip-audit && pip-audit -r requirements.txt --strict"
+          '''
+        }
       }
     }
 
     stage('trivy fs+image') {
       steps {
-        bat '''
-          docker run --rm -v "%WORKSPACE%:/src" -v trivy-cache:/root/.cache/ aquasec/trivy:latest ^
-            fs --severity HIGH,CRITICAL --exit-code 1 --format json --output /src\\trivy-fs.json /src
-        '''
-        bat '''
-          docker run --rm -v trivy-cache:/root/.cache/ aquasec/trivy:latest ^
-            image --severity HIGH,CRITICAL --exit-code 1 --format json --output trivy-image.json %IMAGE%
-        '''
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          // FS scan -> /src/trivy-fs.json
+          bat '''
+            docker run --rm ^
+              -v "%WORKSPACE%:/src" ^
+              -v trivy-cache:/root/.cache/ ^
+              aquasec/trivy:latest fs ^
+                --severity HIGH,CRITICAL --exit-code 1 ^
+                --format json --output /src/trivy-fs.json /src
+          '''
+          // Image scan -> /report/trivy-image.json (mounted to workspace)
+          bat """
+            docker run --rm ^
+              -v "%WORKSPACE%:/report" ^
+              -v trivy-cache:/root/.cache/ ^
+              aquasec/trivy:latest image ^
+                --severity HIGH,CRITICAL --exit-code 1 ^
+                --format json --output /report/trivy-image.json %IMAGE%
+          """
+        }
       }
-      post { always { archiveArtifacts artifacts: 'trivy-fs.json,trivy-image.json', allowEmptyArchive: true } }
+      post {
+        always { archiveArtifacts artifacts: 'trivy-*.json', allowEmptyArchive: false, fingerprint: true }
+      }
     }
 
     stage('semgrep (SAST)') {
       steps {
-        bat '''
-          docker run --rm -v "%WORKSPACE%:/src" returntocorp/semgrep:latest ^
-            semgrep --config p/ci --error --metrics=off /src
-        '''
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          bat '''
+            docker run --rm -v "%WORKSPACE%:/src" returntocorp/semgrep:latest ^
+              semgrep --config p/ci --error --metrics=off /src
+          '''
+        }
       }
     }
 
     stage('secrets (gitleaks)') {
       steps {
-        bat '''
-          docker run --rm -v "%WORKSPACE%:/repo" zricethezav/gitleaks:latest ^
-            detect --no-git --redact -v --exit-code 1 --source=/repo --report-path gitleaks.json
-        '''
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          // Write report into workspace to avoid "No artifacts found"
+          bat '''
+            docker run --rm ^
+              -v "%WORKSPACE%:/repo" ^
+              zricethezav/gitleaks:latest detect ^
+                --no-git --redact --exit-code 1 ^
+                --report-format json ^
+                --source=/repo ^
+                --report-path /repo/gitleaks.json
+          '''
+        }
       }
-      post { always { archiveArtifacts artifacts: 'gitleaks.json', fingerprint: true } }
+      post {
+        always { archiveArtifacts artifacts: 'gitleaks.json', allowEmptyArchive: false, fingerprint: true }
+      }
     }
   }
 }
