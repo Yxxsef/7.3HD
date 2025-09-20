@@ -93,7 +93,9 @@ stage('Quality Gate') {
 
 
 
-    stage('Security') {
+stage('Security') {
+  parallel {
+    stage('snyk') {
       steps {
         withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
           powershell '''
@@ -105,11 +107,55 @@ stage('Quality Gate') {
           '''
         }
       }
-      post {
-        always  { archiveArtifacts artifacts: 'reports/*.json', fingerprint: true }
-        failure { echo 'Security findings above threshold' }
+      post { always { archiveArtifacts artifacts: 'reports/*.json', fingerprint: true } }
+    }
+
+    stage('deps (pip-audit)') {
+      steps {
+        bat '''
+          docker run --rm -v "%WORKSPACE%:/src" -w /src python:3.11-slim sh -lc ^
+            "python -m pip install -U pip pip-audit && pip-audit -r requirements.txt --strict"
+        '''
       }
     }
+
+    stage('trivy fs+image') {
+      steps {
+        bat '''
+          docker run --rm -v "%WORKSPACE%:/src" -v trivy-cache:/root/.cache/ aquasec/trivy:latest ^
+            fs --severity HIGH,CRITICAL --exit-code 1 --format json --output /src\\trivy-fs.json /src
+        '''
+        bat '''
+          docker run --rm -v trivy-cache:/root/.cache/ aquasec/trivy:latest ^
+            image --severity HIGH,CRITICAL --exit-code 1 --format json --output trivy-image.json %IMAGE%
+        '''
+      }
+      post { always { archiveArtifacts artifacts: 'trivy-fs.json,trivy-image.json', allowEmptyArchive: true } }
+    }
+
+    stage('semgrep (SAST)') {
+      steps {
+        bat '''
+          docker run --rm -v "%WORKSPACE%:/src" returntocorp/semgrep:latest ^
+            semgrep --config p/ci --error --metrics=off /src
+        '''
+      }
+    }
+
+    stage('secrets (gitleaks)') {
+      steps {
+        bat '''
+          docker run --rm -v "%WORKSPACE%:/repo" zricethezav/gitleaks:latest ^
+            detect --no-git --redact -v --exit-code 1 --source=/repo --report-path gitleaks.json
+        '''
+      }
+      post { always { archiveArtifacts artifacts: 'gitleaks.json', fingerprint: true } }
+    }
+  }
+}
+
+
+
 
 stage('Deploy (staging)') {
   when { branch 'main' }
