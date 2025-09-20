@@ -165,22 +165,31 @@ stage('Security') {
       }
     }
 
-    stage('secrets (gitleaks)') {
-      steps {
-        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-          bat '''
-            docker run --rm ^
-              -v "%WORKSPACE%:/repo" ^
-              zricethezav/gitleaks:latest detect ^
-                --no-git --redact --exit-code 0 ^
-                --report-format json ^
-                --source=/repo ^
-                --report-path /repo/reports/gitleaks.json
-          '''
-        }
-      }
-      post { always { archiveArtifacts artifacts: 'reports/gitleaks.json', allowEmptyArchive: true, fingerprint: true } }
+stage('secrets (gitleaks)') {
+  steps {
+    catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+      bat """
+      if not exist reports mkdir reports
+
+      docker run --rm ^
+        -v "%WORKSPACE%:/repo" ^
+        -v "%WORKSPACE%\\gitleaks.toml:/gitleaks.toml" ^
+        zricethezav/gitleaks:latest detect ^
+          --no-git --redact --exit-code 0 ^
+          --config-path /gitleaks.toml ^
+          --report-format json ^
+          --source=/repo ^
+          --report-path /repo/reports/gitleaks.json
+      """
     }
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'reports/gitleaks.json', fingerprint: true
+    }
+  }
+}
+
 
   } // parallel
 }
